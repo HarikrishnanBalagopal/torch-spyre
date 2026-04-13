@@ -95,6 +95,8 @@ cmake_library_path = os.environ.get("CMAKE_LIBRARY_PATH", "")
 extra_library_dirs = cmake_library_path.split(":") if cmake_library_path else []
 LIBRARY_DIRS += [Path(p) for p in extra_library_dirs if p]
 
+COMPILE_AIUPTI = os.environ.get("USE_SPYRE_PROFILER", "0") == "1"
+
 if "RUNTIME_INSTALL_DIR" in os.environ:
     # take lower precedence than CMAKE_LIBRARY_PATH and CMAKE_INCLUDE_PATH
     RUNTIME_DIR = Path(os.environ["RUNTIME_INSTALL_DIR"])
@@ -155,11 +157,33 @@ else:
 INCLUDE_DIRS += [os.environ["SEN_COMMON_HEADERS"]]
 
 use_new_system = os.environ.get("NEW_SYSTEM_SETUP", "0") == "1"
-
 if use_new_system:
     LIBRARIES = ["flex"]
 else:
     LIBRARIES = ["sendnn", "sendnn_interface", "flex"]
+
+
+if COMPILE_AIUPTI:  # Include kineto and libaiupti headers
+    import torch
+
+    KINETO_INCLUDE_DIR = Path(torch.__path__[0]) / "include" / "kineto"
+    if KINETO_INCLUDE_DIR.is_dir():
+        COMMON_INCLUDE_DIR = Path(os.environ["SEN_COMMON_HEADERS"])
+        INCLUDE_DIRS += [
+            KINETO_INCLUDE_DIR,
+            COMMON_INCLUDE_DIR / "libaiupti",
+        ]
+    else:
+        COMPILE_AIUPTI = False
+
+    if os.environ.get("LIBAIUPTI_INSTALL_DIR"):
+        LIBAIUPTI_DIR = Path(os.environ["LIBAIUPTI_INSTALL_DIR"])
+        _aiupti_lib = Path(os.environ["LIBAIUPTI_INSTALL_DIR"]) / "lib" / "libaiupti.so"
+        if _aiupti_lib.exists():
+            LIBRARY_DIRS += [LIBAIUPTI_DIR / "lib"]
+
+    LIBRARIES.insert(-1, "aiupti")  # Build dependency on flex
+
 if use_spyre_ccl:
     LIBRARIES.append("spyre_comms")
 
@@ -214,6 +238,8 @@ if __name__ == "__main__":
         from torch.utils.cpp_extension import BuildExtension, CppExtension
 
         sources = list(CSRC_DIR.glob("*.cpp"))
+        if COMPILE_AIUPTI:
+            sources += CSRC_DIR.glob("profiler/*.cpp")
         distributed_sources = (
             list(DISTRIBUTED_SRC_DIR.glob("*.cpp")) if use_spyre_ccl else []
         )
@@ -264,6 +290,10 @@ if __name__ == "__main__":
                 define_macros=base_define_macros
                 + [
                     ("MODULE_NAME", f'"{PACKAGE_NAME}._C"'),
+                    ("SPYRE_DEBUG_ENV", '"TORCH_SPYRE_DEBUG"'),
+                    ("SPYRE_DOWNCAST_ENV", '"TORCH_SPYRE_DOWNCAST_WARN"'),
+                    ("EAGER_MODE_ENV", '"EAGER_MODE"'),
+                    ("BOOST_ALL_DYN_LINK", None),  # avoid static link to boost
                 ],
             ),
             CppExtension(
