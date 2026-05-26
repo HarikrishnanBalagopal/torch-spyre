@@ -273,6 +273,9 @@ if __name__ == "__main__":
             ("SPYRE_DOWNCAST_ENV", '"TORCH_SPYRE_DOWNCAST_WARN"'),
             ("EAGER_MODE_ENV", '"EAGER_MODE"'),
             ("BOOST_ALL_DYN_LINK", None),  # avoid static link to boost
+            *([("HAS_AIUPTI", None)] if COMPILE_AIUPTI else []),
+            *([("USE_KINETO", None)] if COMPILE_AIUPTI else []),
+            ("FMT_HEADER_ONLY", None),
         ]
         if use_spyre_ccl:
             base_define_macros.append(("USE_SPYRE_CCL", None))
