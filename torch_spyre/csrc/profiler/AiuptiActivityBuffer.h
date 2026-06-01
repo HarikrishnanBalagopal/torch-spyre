@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 The Torch-Spyre Authors.
+ * Copyright 2026 The Torch-Spyre Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,8 @@
  */
 #pragma once
 
-#include <assert.h>
-#include <stdlib.h>
-
+#include <cassert>
+#include <cstdlib>
 #include <deque>
 #include <memory>
 #include <vector>

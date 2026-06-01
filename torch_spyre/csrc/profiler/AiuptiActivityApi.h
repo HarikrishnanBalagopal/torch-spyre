@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 The Torch-Spyre Authors.
+ * Copyright 2026 The Torch-Spyre Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,8 +59,6 @@ class AiuptiActivityApi {
       std::function<void(const Pti_Activity*)> handler);
 
   void setMaxBufferSize(int size);
-  // void setDeviceBufferSize(size_t size);
-  // void setDeviceBufferPoolLimit(size_t limit);
 
   std::atomic_bool stopCollection{false};
   int64_t flushOverhead{0};

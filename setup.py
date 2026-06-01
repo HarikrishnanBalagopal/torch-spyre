@@ -56,6 +56,7 @@ def check_libflex():
 ROOT_DIR = Path(__file__).absolute().parent
 CSRC_DIR = ROOT_DIR / PATH_NAME / "csrc"
 DISTRIBUTED_SRC_DIR = CSRC_DIR / "distributed"
+PROFILER_SRC_DIR = CSRC_DIR / "profiler"
 
 
 # Automatically download json.hpp if not present
@@ -238,8 +239,9 @@ if __name__ == "__main__":
         from torch.utils.cpp_extension import BuildExtension, CppExtension
 
         sources = list(CSRC_DIR.glob("*.cpp"))
-        if COMPILE_AIUPTI:
-            sources += CSRC_DIR.glob("profiler/*.cpp")
+        profiler_sources = (
+            list(PROFILER_SRC_DIR.glob("*.cpp")) if COMPILE_AIUPTI else []
+        )
         distributed_sources = (
             list(DISTRIBUTED_SRC_DIR.glob("*.cpp")) if use_spyre_ccl else []
         )
@@ -265,6 +267,9 @@ if __name__ == "__main__":
         distributed_src_paths = [
             p.relative_to(ROOT_DIR).as_posix() for p in sorted(distributed_sources)
         ]
+        profiler_src_paths = [
+            p.relative_to(ROOT_DIR).as_posix() for p in sorted(profiler_sources)
+        ]
 
         # Build define_macros list conditionally
         base_define_macros = [
@@ -273,19 +278,20 @@ if __name__ == "__main__":
             ("SPYRE_DOWNCAST_ENV", '"TORCH_SPYRE_DOWNCAST_WARN"'),
             ("EAGER_MODE_ENV", '"EAGER_MODE"'),
             ("BOOST_ALL_DYN_LINK", None),  # avoid static link to boost
-            *([("HAS_AIUPTI", None)] if COMPILE_AIUPTI else []),
-            *([("USE_KINETO", None)] if COMPILE_AIUPTI else []),
-            ("FMT_HEADER_ONLY", None),
         ]
         if use_spyre_ccl:
             base_define_macros.append(("USE_SPYRE_CCL", None))
         if use_new_system:
             base_define_macros.append(("USE_FLEX_NAMESPACE", None))
+        if COMPILE_AIUPTI:
+            base_define_macros.append(("HAS_AIUPTI", None))
+            base_define_macros.append(("USE_KINETO", None))
+            base_define_macros.append(("FMT_HEADER_ONLY", None))
 
         ext_modules = [
             CppExtension(
                 name=f"{PACKAGE_NAME}._C",
-                sources=core_src_paths + distributed_src_paths,
+                sources=core_src_paths + distributed_src_paths + profiler_src_paths,
                 include_dirs=[str(p) for p in INCLUDE_DIRS],
                 library_dirs=[str(p) for p in LIBRARY_DIRS],
                 libraries=LIBRARIES,
@@ -293,10 +299,6 @@ if __name__ == "__main__":
                 define_macros=base_define_macros
                 + [
                     ("MODULE_NAME", f'"{PACKAGE_NAME}._C"'),
-                    ("SPYRE_DEBUG_ENV", '"TORCH_SPYRE_DEBUG"'),
-                    ("SPYRE_DOWNCAST_ENV", '"TORCH_SPYRE_DOWNCAST_WARN"'),
-                    ("EAGER_MODE_ENV", '"EAGER_MODE"'),
-                    ("BOOST_ALL_DYN_LINK", None),  # avoid static link to boost
                 ],
             ),
             CppExtension(
