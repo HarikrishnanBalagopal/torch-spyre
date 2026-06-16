@@ -1,5 +1,14 @@
 #!/usr/bin/env bash
 
+echo "download RPMs script called with the following env vars:"
+echo "ARTIFACTORY_USER $ARTIFACTORY_USER"
+echo "ARTIFACTORY_BASE_URL $ARTIFACTORY_BASE_URL"
+echo "ARTIFACTORY_BASE_URL $ARTIFACTORY_BASE_URL"
+echo "ARTIFACTORY_RPM_PATH $ARTIFACTORY_RPM_PATH"
+echo "ARTIFACTORY_LOCATION $ARTIFACTORY_LOCATION"
+echo "RPM_NAMES $RPM_NAMES"
+echo "RPMS_DOWNLOAD_DIR $RPMS_DOWNLOAD_DIR"
+
 function check_env_var() {
     local var_name="$1"
     local var_value="${!var_name}"
