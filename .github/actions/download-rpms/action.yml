@@ -60,4 +60,11 @@ runs:
         source /etc/profile.d/ibm-aiu-setup.sh
         cd torch-spyre-repo/
         ls -la "$DOWNLOAD_SCRIPT"
+        export ARTIFACTORY_USER
+        export ARTIFACTORY_TOKEN
+        export ARTIFACTORY_BASE_URL
+        export ARTIFACTORY_RPM_PATH
+        export ARTIFACTORY_LOCATION
+        export RPM_NAMES
+        export RPMS_DOWNLOAD_DIR
         "$DOWNLOAD_SCRIPT"
