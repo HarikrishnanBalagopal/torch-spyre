@@ -35,7 +35,7 @@ fi
 check_command_exists dnf
 
 check_env_var ARTIFACTORY_USER
-check_env_var ARTIFACTORY_API_KEY
+check_env_var ARTIFACTORY_TOKEN
 
 RPM_NAMES_TXT="${RPM_NAMES_TXT:-rpms.txt}"
 
@@ -70,7 +70,7 @@ cat <<EOF > "${DNF_REPO_CONFIG_DIR}/artifactory.repo"
 name=artifactory
 baseurl=${ARTIFACTORY_LOCATION}
 username=${ARTIFACTORY_USER}
-password=${ARTIFACTORY_API_KEY}
+password=${ARTIFACTORY_TOKEN}
 enabled=1
 gpgcheck=0
 sslverify=1

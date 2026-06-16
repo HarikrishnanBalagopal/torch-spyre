@@ -224,7 +224,7 @@ jobs:
           rpm_location: ${{ inputs.rpm_location }}
           rpm_names: ${{ inputs.rpm_names }}
           artifactory_user: ${{ secrets.ARTIFACTORY_USER }}
-          artifactory_api_key: ${{ secrets.ARTIFACTORY_API_KEY }}
+          artifactory_token: ${{ secrets.ARTIFACTORY_TOKEN }}
           artifactory_base_url: ${{ secrets.ARTIFACTORY_BASE_URL }}
           artifactory_rpm_path: ${{ secrets.ARTIFACTORY_RPM_PATH }}
 
@@ -411,7 +411,7 @@ jobs:
           rpm_location: ${{ inputs.rpm_location }}
           rpm_names: ${{ inputs.rpm_names }}
           artifactory_user: ${{ secrets.ARTIFACTORY_USER }}
-          artifactory_api_key: ${{ secrets.ARTIFACTORY_API_KEY }}
+          artifactory_token: ${{ secrets.ARTIFACTORY_TOKEN }}
           artifactory_base_url: ${{ secrets.ARTIFACTORY_BASE_URL }}
           artifactory_rpm_path: ${{ secrets.ARTIFACTORY_RPM_PATH }}
 
@@ -422,7 +422,7 @@ jobs:
           rpm_names: ibm-deeptools ibm-deeptools-devel ibm-senlib-core ibm-senlib-dd2 ibm-flex ibm-flex-devel ibm-aiu-toolbox-e2e ibm-spyre-comms ibm-spyre-comms-devel
             ibm-senlib-headers
           artifactory_user: ${{ secrets.ARTIFACTORY_USER }}
-          artifactory_api_key: ${{ secrets.ARTIFACTORY_API_KEY }}
+          artifactory_token: ${{ secrets.ARTIFACTORY_TOKEN }}
           artifactory_base_url: ${{ secrets.ARTIFACTORY_BASE_URL }}
           artifactory_rpm_path: ${{ secrets.ARTIFACTORY_RPM_PATH }}
 
