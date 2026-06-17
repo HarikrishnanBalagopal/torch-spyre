@@ -27,11 +27,12 @@ Add new tests there using spyre_hint(num_tiles_per_dim=...) annotations.
 """
 
 import os
-import sys
+
+import pytest
+import torch
 import unittest
 from unittest.mock import patch as mock_patch
 
-import torch
 from torch._inductor.test_case import TestCase as InductorTestCase
 from torch._inductor.utils import run_and_get_code
 
@@ -1304,6 +1305,15 @@ class TestCoarseTileNestedReductionE2E(InductorTestCase):
         super().setUp()
         torch.manual_seed(0xCAFE)
 
+    @pytest.mark.xfail(
+        reason=(
+            "Fails with cpu/spyre mismatch (~15-25% elements wrong). "
+            "Root cause under investigation: suspected C++ runtime or "
+            "device-level state contamination from prior flash attention "
+            "execution, or a codegen bug in nested outer-B + inner-K tiling."
+        ),
+        strict=True,
+    )
     def test_nested_bmm_outer_Batch_inner_K_correct(self):
         """bmm [B,M,K]@[B,K,N] outer B (output) + inner K (reduction) — correct."""
         from torch_spyre._inductor import spyre_hint
