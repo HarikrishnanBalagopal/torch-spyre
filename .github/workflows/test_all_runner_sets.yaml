@@ -1,0 +1,94 @@
+name: bisect issues with runner sets
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ (github.event_name == 'pull_request' && github.event.pull_request.html_url) || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: read # so that gh pr view can fetch the file list
+
+jobs:
+  test_runner_sets:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          # ------------------------------------------------------
+          - name: spyre_pf_x0 image_spyre_backend
+            image_label: image_spyre_backend
+            cards: spyre_pf_x0
+          - name: spyre_pf_x0 image_spyre_backend_shadow
+            image_label: image_spyre_backend_shadow
+            cards: spyre_pf_x0
+          - name: spyre_pf_x0 image_torch_spyre
+            image_label: image_torch_spyre
+            cards: spyre_pf_x0
+          - name: spyre_pf_x0 image_torch_spyre_shadow
+            image_label: image_torch_spyre_shadow
+            cards: spyre_pf_x0
+          - name: spyre_pf_x0 image_spyre_inference
+            image_label: image_spyre_inference
+            cards: spyre_pf_x0
+          - name: spyre_pf_x0 image_spyre_inference_shadow
+            image_label: image_spyre_inference_shadow
+            cards: spyre_pf_x0
+          # ------------------------------------------------------
+          - name: spyre_pf_x1 image_spyre_backend
+            image_label: image_spyre_backend
+            cards: spyre_pf_x1
+          - name: spyre_pf_x1 image_spyre_backend_shadow
+            image_label: image_spyre_backend_shadow
+            cards: spyre_pf_x1
+          - name: spyre_pf_x1 image_torch_spyre
+            image_label: image_torch_spyre
+            cards: spyre_pf_x1
+          - name: spyre_pf_x1 image_torch_spyre_shadow
+            image_label: image_torch_spyre_shadow
+            cards: spyre_pf_x1
+          - name: spyre_pf_x1 image_spyre_inference
+            image_label: image_spyre_inference
+            cards: spyre_pf_x1
+          - name: spyre_pf_x1 image_spyre_inference_shadow
+            image_label: image_spyre_inference_shadow
+            cards: spyre_pf_x1
+          # ------------------------------------------------------
+          - name: spyre_pf_x2 image_spyre_backend
+            image_label: image_spyre_backend
+            cards: spyre_pf_x2
+          - name: spyre_pf_x2 image_spyre_backend_shadow
+            image_label: image_spyre_backend_shadow
+            cards: spyre_pf_x2
+          - name: spyre_pf_x2 image_torch_spyre
+            image_label: image_torch_spyre
+            cards: spyre_pf_x2
+          - name: spyre_pf_x2 image_torch_spyre_shadow
+            image_label: image_torch_spyre_shadow
+            cards: spyre_pf_x2
+          - name: spyre_pf_x2 image_spyre_inference
+            image_label: image_spyre_inference
+            cards: spyre_pf_x2
+          - name: spyre_pf_x2 image_spyre_inference_shadow
+            image_label: image_spyre_inference_shadow
+            cards: spyre_pf_x2
+          # ------------------------------------------------------
+    name: ${{ matrix.runner.name }}
+    runs-on:
+      - x86_64
+      - ${{ matrix.runner.cards }}
+      - linux
+      - ${{ matrix.runner.image_label }}
+    steps:
+      - run: |
+          echo 'start'
+          pwd
+          ls -la
+          whoami
+          id
+          echo "HOSTNAME $HOSTNAME"
+          echo 'end'

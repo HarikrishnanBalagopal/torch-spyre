@@ -14,27 +14,38 @@ description: |
   steady-state cost is one git ref check per CI run.
 
 inputs:
-  cloned-dir:
-    description: Path to the pre-cloned torch-spyre directory in the image.
+  torch_spyre_dir:
+    description: Path to the cloned torch-spyre repo
+    required: true
+  pytorch_dir:
+    description: Path where the pytorch repo will be cloned
     required: false
-    default: /home/senuser/torch-spyre
-  torch-root:
-    description: Path to the pre-cloned pytorch directory in the image.
+    type: string
+    default: pytorch
+  repo_url:
+    description: The pytorch repo URL
     required: false
-    default: /home/senuser/pytorch
+    type: string
+    default: https://github.com/pytorch/pytorch.git
 
 runs:
   using: composite
   steps:
-    - name: Re-checkout pytorch at release branch matching pyproject.toml
+    - name: Checkout pytorch at release branch matching pyproject.toml
       shell: bash
       env:
-        CLONED_TORCH_SPYRE_DIR: ${{ inputs.cloned-dir }}
-        TORCH_ROOT: ${{ inputs.torch-root }}
+        CLONED_TORCH_SPYRE_DIR: ${{ inputs.torch_spyre_dir }}
+        TORCH_ROOT: ${{ inputs.pytorch_dir }}
+        REPO_URL: ${{ inputs.repo_url }}
       run: |
+        set -e
         source "$HOME/.bashrc"
         source /etc/profile.d/ibm-aiu-setup.sh
-        # The pre-cloned repos may be owned by a different user than the
+
+        [[ "$CLONED_TORCH_SPYRE_DIR" != /* ]] && CLONED_TORCH_SPYRE_DIR="${PWD}/${CLONED_TORCH_SPYRE_DIR}"
+        [[ "$TORCH_ROOT" != /* ]] && TORCH_ROOT="${PWD}/${TORCH_ROOT}"
+
+        # Pre-cloned repos may be owned by a different user than the
         # runner process; mark all directories as safe (covers the repo
         # and any submodules).
         git config --global --add safe.directory '*'
@@ -46,13 +57,31 @@ runs:
         # always agrees with the image on what `release/X.Y` means. The
         # script uses stdlib only (re + tomllib), so no venv activation
         # needed here.
+        echo 'detect the pytorch version from pyproject.toml'
         cd "$CLONED_TORCH_SPYRE_DIR"
-        VERSION=$(python3 tools/get_torch_minor.py pyproject.toml)
-        TARGET_BRANCH="release/${VERSION}"
+        pwd
+        ls -al pyproject.toml
+        TORCH_MINOR=$(python3 tools/get_torch_minor.py pyproject.toml)
+        TARGET_BRANCH="release/${TORCH_MINOR}"
         echo "TARGET_BRANCH=${TARGET_BRANCH}"
 
+        echo "create the pytorch repo at $TORCH_ROOT"
+        mkdir -p "$TORCH_ROOT"
         cd "$TORCH_ROOT"
-        echo "Pre-baked pytorch state:"
+        pwd
+        git init -b main
+        git remote add origin "$REPO_URL"
+        git remote -v
+        git fetch --depth=1 origin "$TARGET_BRANCH"
+        git checkout --detach "$TARGET_BRANCH" || git checkout --detach FETCH_HEAD
+        if [[ -f '.gitmodules' ]]; then
+            git submodule sync --recursive
+            git submodule update \
+                --init \
+                --recursive \
+                --depth 1 \
+                --jobs 8
+        fi
         git log -1 --oneline || true
 
         # Determine the current ref. Try branch name first, then any
@@ -64,8 +93,7 @@ runs:
         fi
 
         echo "pytorch not on ${TARGET_BRANCH} (current: '${CURRENT_BRANCH:-detached}'); fetching."
-        git fetch --depth=1 --force origin \
-          "+refs/heads/${TARGET_BRANCH}:refs/heads/${TARGET_BRANCH}"
+        git fetch --depth=1 --force origin "+refs/heads/${TARGET_BRANCH}:refs/heads/${TARGET_BRANCH}"
         git checkout --force "${TARGET_BRANCH}"
         git submodule sync --recursive
         git submodule update --init --recursive --force --depth=1

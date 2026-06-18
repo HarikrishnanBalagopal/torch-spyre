@@ -37,11 +37,11 @@ on:
         type: string
         default: ''
       build_torch_spyre:
-        description: Whether to re-build torch-spyre after installing the RPM
+        description: Whether to build torch-spyre
         required: false
         type: boolean
         default: true
-      runner_label:
+      image_label:
         description: |
           Per-PR ephemeral runner-set IMAGE label to select
           (image_torch_spyre_pr_<component>_<sha12>, e.g. image_torch_spyre_pr_flex_8ddcf3e155e9).
@@ -49,7 +49,7 @@ on:
           runtime via rpm_names; the ephemeral flow leaves this set and rpm_names empty).
         required: false
         type: string
-        default: ''
+        default: image_spyre_backend
 
 concurrency:
   group: ${{ github.workflow }}-${{ (github.event_name == 'pull_request' && github.event.pull_request.html_url) || (github.event_name == 'workflow_dispatch'
@@ -121,16 +121,14 @@ jobs:
     uses: ./.github/workflows/_test_matrix.yaml
     with:
       runner_label: linux
-      # Per-PR ephemeral image label when provided, else the standing set.
-      image_label: ${{ inputs.runner_label || 'image_torch_spyre' }}
+      image_label: ${{ inputs.image_label || 'image_spyre_backend' }}
       extra_test_flags: -v
       checkout_pytorch: false
-      torch_root: ''
       ref: ${{ inputs.ref || '' }}
       repository: ${{ inputs.repository || '' }}
       rpm_location: ${{ inputs.rpm_location || '' }}
       rpm_names: ${{ inputs.rpm_names || '' }}
-      build_torch_spyre: ${{ inputs.build_torch_spyre == true }}
+      build_torch_spyre: ${{ inputs.build_torch_spyre }}
 
   # ---------------------------------------------------------------------------
   # Job 3: run-spyre-unit-tests (required check gate)
@@ -151,19 +149,16 @@ jobs:
     if: always()
     steps:
       - name: Evaluate test results
-        run: |-
+        run: |
           RESULT="${{ needs.run-tests.result }}"
           echo "run-tests result: ${RESULT}"
-
-          if [[ "${RESULT}" == "success" ]]; then
+          if [[ "${RESULT}" == 'success' ]]; then
             echo "All test suites passed."
             exit 0
           fi
-
           if [[ "${RESULT}" == "skipped" ]]; then
             echo "Tests skipped — docs-only change, no test-relevant files modified."
             exit 0
           fi
-
           echo "One or more test suites failed or were cancelled."
           exit 1

@@ -17,7 +17,7 @@ inputs:
   work_dir:
     description: Directory to cd into before running (must have .venv)
     required: false
-    default: /home/senuser/torch-spyre
+    default: torch-spyre
   max_attempts:
     description: Total number of attempts before giving up
     required: false
@@ -30,6 +30,10 @@ inputs:
     description: How often (seconds) the stall watcher polls
     required: false
     default: '30'
+  interval_between_attempts:
+    description: Sleep this many seconds between attempts
+    required: false
+    default: '10'
   junit_xml_path:
     description: Full path for the --junit-xml report (leave empty to skip)
     required: false
@@ -52,16 +56,27 @@ runs:
         MAX_ATTEMPTS: ${{ inputs.max_attempts }}
         STALL_TIMEOUT_SECS: ${{ inputs.stall_timeout_secs }}
         STALL_CHECK_INTERVAL: ${{ inputs.stall_check_interval }}
+        INTERVAL_BETWEEN_ATTEMPTS: ${{ inputs.interval_between_attempts }}
+        WORK_DIR: ${{ inputs.work_dir }}
+        CONFIG: ${{ inputs.config }}
       run: |-
         set +e
         set +o pipefail
 
         source "$HOME/.bashrc"
         source /etc/profile.d/ibm-aiu-setup.sh
-        cd "${{ inputs.work_dir }}"
-        source .venv/bin/activate
 
-        CONFIG="${{ inputs.config }}"
+        pwd
+        ls -la
+
+        echo "WORK_DIR $WORK_DIR"
+        if [[ -n "$WORK_DIR" ]] ; then
+          cd "$WORK_DIR" || exit 1
+          pwd
+          ls -la
+        fi
+
+        source .venv/bin/activate || exit 1
 
         _ARCH="$(uname -m)"
         _SLOW_FLAG=""
@@ -78,9 +93,18 @@ runs:
           LOG_FILE="$(mktemp /tmp/test_output_XXXXXX.log)"
           STALL_FLAG="$(mktemp /tmp/stall_flag_XXXXXX.tmp)"
 
+          # TODO: The wc -l Buffering Trap (False Stall Detections)
+          # The Bug:
+          # when run_test.sh outputs to a pipe,
+          # Linux switches from line-buffering to 4 KB block-buffering.
+          # If the test script outputs text slowly
+          # (e.g., one status line every 10 seconds),
+          # those lines will sit in the memory buffer
+          # and won't be written to $LOG_FILE until 4,096 bytes accumulate.
           stall_watcher() {
             local elapsed_stall=0
             local prev_lines=0
+            local current_lines=0
             while [[ ! -f "${STALL_FLAG}.done" ]]; do
               sleep "$STALL_CHECK_INTERVAL"
               current_lines=$(wc -l < "$LOG_FILE" 2>/dev/null || echo 0)
@@ -170,7 +194,7 @@ runs:
           fi
 
           rm -f "$LOG_FILE" "$STALL_FLAG" "${STALL_FLAG}.done"
-          [[ $attempt -lt $MAX_ATTEMPTS ]] && sleep 10
+          [[ $attempt -lt $MAX_ATTEMPTS ]] && sleep "$INTERVAL_BETWEEN_ATTEMPTS"
         done
 
         echo "=== All ${MAX_ATTEMPTS} attempts failed for ${{ inputs.suite_name }} ==="

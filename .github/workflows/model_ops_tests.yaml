@@ -33,7 +33,7 @@ jobs:
       - x86_64
       - spyre_pf_x1
       - linux
-      - image_torch_spyre
+      - image_spyre_backend
     timeout-minutes: 60
     env:
       # The CI env var is very important.
@@ -99,9 +99,14 @@ jobs:
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: false
 
-      - uses: ./.github/actions/checkout-prebuilt-torch-spyre
+      - name: checkout torch-spyre
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: torch-spyre
 
-      - uses: ./.github/actions/checkout-prebuilt-pytorch
+      - uses: ./.github/actions/checkout-pytorch
+        with:
+          torch_spyre_dir: torch-spyre
 
       - uses: ./.github/actions/gather-runner-info
         with:

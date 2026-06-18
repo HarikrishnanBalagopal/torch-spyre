@@ -17,9 +17,9 @@ on:
       # Runner pool to use for both test jobs
       runner_label:
         description: Runner label appended to the fixed labels (linux)
-        required: true
+        required: false
         type: string
-
+        default: linux
       # IMAGE selector label for runs-on. Normal runs use the standing
       # image_torch_spyre set; the per-PR ephemeral flow passes that PR's set
       # label (image_torch_spyre_pr_<component>_<sha12>, e.g.
@@ -30,28 +30,19 @@ on:
         description: Image scaleSetLabel to select (image_torch_spyre | image_torch_spyre_pr_<KEY>)
         required: false
         type: string
-        default: image_torch_spyre
-
+        default: image_spyre_backend
       # Flags appended to every `bash tests/run_test.sh <config>` call
       extra_test_flags:
         description: Extra flags passed to run_test.sh (e.g. "-v" or "--cpu-compile -vvv -s")
-        required: true
+        required: false
         type: string
-
-      # Whether to run checkout-prebuilt-pytorch (nightly only)
+        default: ''
+      # Whether to run checkout-pytorch (nightly only)
       checkout_pytorch:
         description: Whether to check out the pre-built PyTorch tree
         required: false
         type: boolean
         default: false
-
-      # TORCH_ROOT value; empty string means the env var is not set
-      torch_root:
-        description: Path to the pre-cloned PyTorch repo (leave empty to omit)
-        required: false
-        type: string
-        default: ''
-
       # workflow_dispatch pass-throughs
       ref:
         description: Branch, tag, or SHA to check out
@@ -226,60 +217,56 @@ jobs:
           - name: Tensor Model Loading Layout
             config: torch_spyre_tests/tensors/test_model_utils_config.yaml
 
+    name: ${{ matrix.suite.name }}
+    runs-on:
+      - x86_64
+      - spyre_pf_x1
+      - linux
+      - image_spyre_backend
+    timeout-minutes: 60
+    env:
+      # GitHub Actions sets CI=true which causes pytest inductor tests to fail.
+      # Explicitly clear it.
+      CI: ''
+
     steps:
-      - name: Checkout composite actions
+      - name: sparse checkout for composite actions
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: false
 
-      - uses: ./.github/actions/checkout-prebuilt-torch-spyre
+      - name: checkout torch-spyre
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ inputs.ref }}
-          repository: ${{ inputs.repository }}
+          path: torch-spyre
+          ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.sha }}
+          repository: ${{ inputs.repository || github.event.pull_request.head.repo.full_name || github.repository }}
 
-      - name: Check out pre-built PyTorch
+      - name: check out pytorch branch based on pyproject.toml
         if: ${{ inputs.checkout_pytorch }}
-        uses: ./.github/actions/checkout-prebuilt-pytorch
+        uses: ./.github/actions/checkout-pytorch
+        with:
+          torch_spyre_dir: torch-spyre
 
       - uses: ./.github/actions/gather-runner-info
         with:
           verbose: 'true'
 
-      # LEGACY runtime-RPM path. The per-PR ephemeral flow bakes the RPM into the
-      # image and sends an EMPTY rpm_names, so both RPM steps below auto-skip (no
-      # runtime `sudo dnf` — sudo is unreliable on the cluster SCC). Kept gated for
-      # the legacy path; remove once the USE_EPHEMERAL_RUNNERS=false path is retired.
-      - name: Download RPMs
-        if: ${{ inputs.rpm_names != '' }}
-        uses: ./.github/actions/download-rpms
-        with:
-          rpm_location: ${{ inputs.rpm_location }}
-          rpm_names: ${{ inputs.rpm_names }}
-          artifactory_user: ${{ secrets.ARTIFACTORY_USER }}
-          artifactory_api_key: ${{ secrets.ARTIFACTORY_API_KEY }}
-          artifactory_base_url: ${{ secrets.ARTIFACTORY_BASE_URL }}
-          artifactory_rpm_path: ${{ secrets.ARTIFACTORY_RPM_PATH }}
-
-      - name: Install RPMs
-        if: ${{ inputs.rpm_names != '' }}
-        run: |
-          ls -la
-          ls -la rpms/
-          sudo dnf install -y rpms/*.rpm
-
-      - name: Build torch-spyre
-        if: ${{ inputs.rpm_names == '' || inputs.build_torch_spyre }}
+      - name: build torch-spyre
+        if: ${{ inputs.build_torch_spyre }}
         uses: ./.github/actions/build-torch-spyre
+        with:
+          torch_spyre_dir: torch-spyre
 
-      - name: Derive report paths
+      - name: derive report paths
         run: |
           CONFIG="${{ matrix.suite.config }}"
           REPORT_NAME="$(basename "${CONFIG%.yaml}.xml")"
           echo "REPORT_NAME=${REPORT_NAME}" >> "$GITHUB_ENV"
           echo "REPORT_PATH=${GITHUB_WORKSPACE}/${REPORT_NAME}" >> "$GITHUB_ENV"
 
-      - name: Run ${{ matrix.suite.name }} tests
+      - name: run ${{ matrix.suite.name }} tests
         id: run_tests
         uses: ./.github/actions/run-test-suite
         with:
@@ -295,7 +282,7 @@ jobs:
             rm -rf /tmp/etc/ibm/spyre/topo.json
             source /etc/profile.d/ibm-aiu-setup.sh
 
-      - name: Upload JUnit XML report
+      - name: upload JUnit XML report
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -312,13 +299,11 @@ jobs:
     runs-on:
       - x86_64
       - spyre_pf_x2
-      - ${{ inputs.runner_label }}
-      - ${{ inputs.image_label }}
+      - linux
+      - image_spyre_backend
     timeout-minutes: 60
     env:
       CI: ''
-      CLONED_TORCH_SPYRE_DIR: /home/senuser/torch-spyre
-      TORCH_ROOT: ${{ inputs.torch_root }}
 
     strategy:
       fail-fast: false
@@ -338,40 +323,22 @@ jobs:
           sparse-checkout: .github/actions
           sparse-checkout-cone-mode: false
 
-      - uses: ./.github/actions/checkout-prebuilt-torch-spyre
+      - name: checkout torch-spyre
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ inputs.ref }}
-          repository: ${{ inputs.repository }}
+          path: torch-spyre
+          ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.sha }}
+          repository: ${{ inputs.repository || github.event.pull_request.head.repo.full_name || github.repository }}
 
-      - name: Check out pre-built PyTorch
+      - name: check out pytorch branch based on pyproject.toml
         if: ${{ inputs.checkout_pytorch }}
-        uses: ./.github/actions/checkout-prebuilt-pytorch
+        uses: ./.github/actions/checkout-pytorch
+        with:
+          torch_spyre_dir: torch-spyre
 
       - uses: ./.github/actions/gather-runner-info
         with:
           verbose: 'true'
-
-      # LEGACY runtime-RPM path. The per-PR ephemeral flow bakes the RPM into the
-      # image and sends an EMPTY rpm_names, so both RPM steps below auto-skip (no
-      # runtime `sudo dnf` — sudo is unreliable on the cluster SCC). Kept gated for
-      # the legacy path; remove once the USE_EPHEMERAL_RUNNERS=false path is retired.
-      - name: Download RPMs
-        if: ${{ inputs.rpm_names != '' }}
-        uses: ./.github/actions/download-rpms
-        with:
-          rpm_location: ${{ inputs.rpm_location }}
-          rpm_names: ${{ inputs.rpm_names }}
-          artifactory_user: ${{ secrets.ARTIFACTORY_USER }}
-          artifactory_api_key: ${{ secrets.ARTIFACTORY_API_KEY }}
-          artifactory_base_url: ${{ secrets.ARTIFACTORY_BASE_URL }}
-          artifactory_rpm_path: ${{ secrets.ARTIFACTORY_RPM_PATH }}
-
-      - name: Install RPMs
-        if: ${{ inputs.rpm_names != '' }}
-        run: |
-          ls -la
-          ls -la rpms/
-          sudo dnf install -y rpms/*.rpm
 
       - name: Build torch-spyre
         if: ${{ inputs.rpm_names == '' || inputs.build_torch_spyre }}

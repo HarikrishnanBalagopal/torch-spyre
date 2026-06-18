@@ -394,3 +394,4 @@ test/*.json
 
 .*env*
 stubs
+/.bob/

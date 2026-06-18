@@ -1,8 +1,8 @@
 name: Build torch-spyre
 description: |
-  Runs `uv sync` in the pre-cloned torch-spyre directory to reconcile the
-  pre-baked .venv against the freshly checked-out pyproject.toml + uv.lock,
-  and force-rebuilds torch-spyre from source.
+  Runs `uv sync` in the torch-spyre directory to create the .venv
+  using the freshly checked-out pyproject.toml + uv.lock,
+  and rebuilds torch-spyre from source.
 
   uv sync only reinstalls torch when the resolved version or source differs
   from what's already installed (e.g. a PR bumps the torch~=2.10.0
@@ -11,28 +11,31 @@ description: |
   via --reinstall-package.
 
 inputs:
-  cloned-dir:
-    description: Path to the pre-cloned torch-spyre directory in the image.
+  torch_spyre_dir:
+    description: Path to the cloned torch-spyre repo
     required: false
-    default: /home/senuser/torch-spyre
+    type: string
+    default: .
 
 runs:
   using: composite
   steps:
+    - name: Install uv
+      uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
     - name: Build torch-spyre
       shell: bash
       env:
-        CLONED_TORCH_SPYRE_DIR: ${{ inputs.cloned-dir }}
+        CLONED_TORCH_SPYRE_DIR: ${{ inputs.torch_spyre_dir }}
       run: |
         source "$HOME/.bashrc"
         source /etc/profile.d/ibm-aiu-setup.sh
+        pwd
+        ls -al
+        [[ "$CLONED_TORCH_SPYRE_DIR" != /* ]] && CLONED_TORCH_SPYRE_DIR="${PWD}/${CLONED_TORCH_SPYRE_DIR}"
         cd "$CLONED_TORCH_SPYRE_DIR"
-        source .venv/bin/activate
-        uv sync \
-          --verbose \
-          --all-extras \
-          --active \
-          --inexact \
-          --reinstall-package torch-spyre
-        uv pip show torch
+        pwd
+        ls -al
+        uv sync --verbose --all-extras
         uv pip freeze
+        uv pip show torch
