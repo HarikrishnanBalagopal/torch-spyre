@@ -1826,6 +1826,13 @@ _run_parallel_across_cards() {
     echo ""
     echo "[torch_oot_device_tests_run_parallel] --parallel: collecting test IDs from ${#RUN_FILES[@]} file(s) to distribute across ${_n_cards} card(s)..."
 
+    # Timestamp the collection phase so its cost is visible in the run log.
+    # Collection re-imports torch + each OOT wrapper per file, so this phase
+    # can dominate --parallel wall-clock; the elapsed line lets a pod run
+    # confirm the fan-out speedup empirically. SECONDS is a bash builtin
+    # (seconds since shell start) — no external `date` dependency.
+    local _collect_start=$SECONDS
+
     # -----------------------------------------------------------------------
     # Step 1: collect all test node IDs across every resolved file.
     #
@@ -1940,6 +1947,9 @@ _run_parallel_across_cards() {
             _all_node_file_idx+=("$i")
         done <<< "$_raw_ids"
     done
+
+    local _collect_elapsed=$(( SECONDS - _collect_start ))
+    echo "[torch_oot_device_tests_run_parallel] Collection phase completed in ${_collect_elapsed}s (${#RUN_FILES[@]} file(s), up to ${_n_cards} concurrent probe(s))."
 
     local _total="${#_all_node_ids[@]}"
     if [[ $_total -eq 0 ]]; then
