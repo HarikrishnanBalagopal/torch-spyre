@@ -59,7 +59,11 @@ class SpyreStream {
   void launchD2H(flex::DmaParams* params) const;
   void launchCompute(flex::ComputeParams* params) const;
   void launchHostCallback(flex::HostCallbackParams* params) const;
-  void launchFill(flex::FillParams* params) const;
+
+  // Device-side memory fill. Converts `value` to the correct 32-bit hardware
+  // pattern for `dtype` internally (no host buffer or H2D copy).
+  void fillAsync(const flex::CompositeAddress* dst, double value,
+                 DataFormats dtype, bool use_dmai = true) const;
 
   // Conversions
   c10::Stream unwrap() const;

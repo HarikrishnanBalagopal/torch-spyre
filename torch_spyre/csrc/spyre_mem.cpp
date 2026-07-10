@@ -779,16 +779,17 @@ at::Tensor spyre_fill_tensor(const at::Tensor& self, double value) {
   auto& storage = spyre_impl->storage();
   auto* ctx = static_cast<SharedOwnerCtx*>(storage.data_ptr().get_context());
 
-  // Map torch dtype to DataFormats for the fill pattern conversion
+  // Map torch dtype to DataFormats; fillAsync converts the value to the correct
+  // 32-bit hardware pattern internally.
   DataFormats dtype = get_device_dtype(self.scalar_type());
 
-  // Construct FillParams and launch via SpyreStream
-  flex::FillParams params(
-      &ctx->composite_addr, ctx->composite_addr.total_size(),
-      flex::RuntimeOperationFill::valueToFillPattern(value, dtype),
-      /*use_dmai=*/true);
+  // Launch the device-side fill via SpyreStream. We use the typed fillAsync
+  // overload rather than building a FillParams ourselves: it does the
+  // value→pattern conversion internally, avoiding a dependency on
+  // flex::RuntimeOperationFill::valueToFillPattern (which is not exported from
+  // libflex).
   SpyreStream stream;
-  stream.launchFill(&params);
+  stream.fillAsync(&ctx->composite_addr, value, dtype, /*use_dmai=*/true);
 
   return self;
 }
