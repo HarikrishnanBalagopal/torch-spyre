@@ -66,15 +66,15 @@ concurrency:
 permissions:
   contents: read
   checks: write
-  pull-requests: read # so that gh pr view can fetch the file list
 
 jobs:
   # ---------------------------------------------------------------------------
   # Job 1: changes
   #
-  # Runs on every PR. Uses gh CLI to fetch the full list of changed files
-  # and checks if any file outside tests/docs/, docs/, README.md, or
-  # CODEOWNERS was modified.
+  # Runs on every event. Diffs the event's base..head commit range to get the
+  # full list of changed files and checks if any file outside tests/docs/,
+  # docs/, README.md, or CODEOWNERS was modified. Events with no usable commit
+  # range (workflow_dispatch, new-branch push) always run tests.
   #
   # code_changed=true  --> non-doc files changed  --> run tests
   # code_changed=false --> only doc/CODEOWNERS files changed --> skip tests
@@ -85,20 +85,45 @@ jobs:
     outputs:
       code_changed: ${{ steps.filter.outputs.code_changed }}
     steps:
+      # Full history so any base..head pair below is reachable for the diff.
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
       - name: Check which paths changed
         id: filter
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          # On pull_request events, fetch the full list of changed files via
-          # the GitHub API. On push to main/tag or workflow_dispatch, assume
-          # tests should always run since we don't have a PR to query.
-          if [[ -n "${{ github.event.pull_request.number }}" ]]; then
-            FILES=$(gh pr view ${{ github.event.pull_request.number }} \
-              --repo ${{ github.repository }} \
-              --json files --jq '.files[].path')
+          # Every event that carries a before/after pair of commits stores it
+          # under a different key; pick the right pair per event, then diff
+          # once. If no pair is available (workflow_dispatch, or a push whose
+          # base is the zero SHA, e.g. a new branch), fall back to running
+          # tests unconditionally.
+          case "${{ github.event_name }}" in
+            pull_request)
+              BASE="${{ github.event.pull_request.base.sha }}"
+              HEAD="${{ github.event.pull_request.head.sha }}"
+              ;;
+            merge_group)
+              BASE="${{ github.event.merge_group.base_sha }}"
+              HEAD="${{ github.event.merge_group.head_sha }}"
+              ;;
+            push)
+              BASE="${{ github.event.before }}"
+              HEAD="${{ github.event.after }}"
+              ;;
+            *)
+              BASE=""
+              HEAD=""
+              ;;
+          esac
+
+          ZERO="0000000000000000000000000000000000000000"
+          if [[ -n "$BASE" && -n "$HEAD" && "$BASE" != "$ZERO" ]]; then
+            # Three-dot diff (against the merge base) so unrelated commits that
+            # landed on the base branch are not counted as changes.
+            FILES=$(git diff --name-only "$BASE...$HEAD")
           else
-            # push to main, tag, or manual dispatch -- always run tests
+            # No usable commit range -- always run tests.
             FILES="non-doc-change"
           fi
 
