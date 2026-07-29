@@ -25,27 +25,29 @@ import torch
 
 from torch_spyre._inductor.scratchpad.allocator import (
     LifetimeBoundBuffer,
+    _lx_planning_size,
 )
 from torch_spyre._inductor.scratchpad.firstfit_bestfit_solver import (
     BestFitLayoutSolver,
     FirstFitLayoutSolver,
 )
+from torch_spyre._inductor.scratchpad.simulated_annealing import (
+    SimulatedAnnealingLayoutSolver,
+)
 from torch_spyre._inductor.scratchpad.plan_solver import (
     MemoryPlanSolver,
-    GreedyLayoutSolver,
     LifetimeBoundBuffer as Buffer,
 )
-from torch_spyre._inductor import config
+from torch_spyre._inductor.scratchpad.greedy_solver import GreedyLayoutSolver
 
-# From scratchpad.py
-AVAILABLE_LX_SIZE = int((2 << 20) * (1.0 - config.dxp_lx_frac_avail))
+AVAILABLE_LX_SIZE = _lx_planning_size()
 
 BYPASS_XFAIL = os.environ.get("SCRATCHPAD_PATTERN_BYPASS_XFAIL", "0") == "1"
 
 
 def make_buffer_registry(names_sizes: dict[str, int]) -> dict[str, Buffer]:
     return {
-        name: Buffer(name=name, size=size, start_time=-1, end_time=-1)
+        name: Buffer(name=name, size=size, uses=[])
         for (name, size) in names_sizes.items()
     }
 
@@ -150,11 +152,13 @@ class Pattern:
         for i, op in enumerate(self.operations):
             for buffer_name in op.inputs + op.outputs:
                 buffer = self.buffers[buffer_name]
-                if buffer.start_time == -1:
-                    buffer.start_time = i
-                buffer.end_time = i + 1
+                if i not in buffer.uses:
+                    buffer.uses.append(i)
 
         self.inputs, self.outputs = self.determine_inputs_outputs()
+
+        for input_name in self.inputs:
+            self.buffers[input_name].first_use_is_read = True
 
         for i, op in enumerate(self.operations):
             output_buffer = self.buffers[op.outputs[0]]
@@ -162,7 +166,8 @@ class Pattern:
                 buffer = self.buffers[buffer_name]
                 if (
                     buffer_name not in self.inputs + self.outputs
-                    and buffer.end_time == i + 1
+                    and buffer.uses
+                    and buffer.uses[-1] == i
                     and buffer.size == output_buffer.size
                 ):
                     output_buffer.in_place_parents.append(buffer_name)
@@ -1085,6 +1090,18 @@ class TestBestFitPatterns(PatternTests, TestCase, role="solver"):
 
 class TestFirstFitPatterns(PatternTests, TestCase, role="solver"):
     solver_type = FirstFitLayoutSolver
+    expected_failures: ClassVar[frozenset[str]] = frozenset(
+        {"eviction_reallocation", "simple_eviction"}
+    )
+
+
+class TestSimulatedAnnealingPatterns(PatternTests, TestCase, role="solver"):
+    solver_type = SimulatedAnnealingLayoutSolver
+    # Simulated annealing is a permutation-based layout solver: it assigns each buffer a
+    # single fixed address for its whole lifetime and never evicts or reallocates.
+    # The two eviction patterns require moving a buffer to HBM and back (possibly
+    # at a different address), which this abstraction cannot express -- the same
+    # limitation shared by best-fit and first-fit.
     expected_failures: ClassVar[frozenset[str]] = frozenset(
         {"eviction_reallocation", "simple_eviction"}
     )
