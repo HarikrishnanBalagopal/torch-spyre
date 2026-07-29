@@ -96,7 +96,7 @@ cmake_library_path = os.environ.get("CMAKE_LIBRARY_PATH", "")
 extra_library_dirs = cmake_library_path.split(":") if cmake_library_path else []
 LIBRARY_DIRS += [Path(p) for p in extra_library_dirs if p]
 
-COMPILE_AIUPTI = os.environ.get("USE_SPYRE_PROFILER", "0") == "1"
+COMPILE_AIUPTI = os.environ.get("USE_SPYRE_PROFILER", "1") == "1"
 
 if "RUNTIME_INSTALL_DIR" in os.environ:
     # take lower precedence than CMAKE_LIBRARY_PATH and CMAKE_INCLUDE_PATH
@@ -168,14 +168,8 @@ if COMPILE_AIUPTI:  # Include kineto and libaiupti headers
     import torch
 
     KINETO_INCLUDE_DIR = Path(torch.__path__[0]) / "include" / "kineto"
-    if KINETO_INCLUDE_DIR.is_dir():
-        COMMON_INCLUDE_DIR = Path(os.environ["SEN_COMMON_HEADERS"])
-        INCLUDE_DIRS += [
-            KINETO_INCLUDE_DIR,
-            COMMON_INCLUDE_DIR / "libaiupti",
-        ]
-    else:
-        COMPILE_AIUPTI = False
+    COMMON_INCLUDE_DIR = Path(os.environ["SEN_COMMON_HEADERS"])
+    INCLUDE_DIRS += [KINETO_INCLUDE_DIR, COMMON_INCLUDE_DIR / "libaiupti"]
 
     if os.environ.get("LIBAIUPTI_INSTALL_DIR"):
         LIBAIUPTI_DIR = Path(os.environ["LIBAIUPTI_INSTALL_DIR"])
