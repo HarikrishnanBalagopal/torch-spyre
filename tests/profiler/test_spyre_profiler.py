@@ -41,7 +41,7 @@ class TestSpyreProfiler(TestCase):
 
         with profile(
             activities=[ProfilerActivity.CPU, ProfilerActivity.PrivateUse1],
-            with_stack=True,
+            with_stack=False,
         ) as prof:
             x *= 2
 
@@ -151,8 +151,8 @@ def test_synchronize_callable():
     assert hasattr(torch, "spyre"), "torch.spyre namespace is missing"
     assert hasattr(torch.spyre, "synchronize"), "torch.spyre.synchronize() is missing"
 
-    x = torch.randn(64, 64, device="spyre")
-    y = torch.randn(64, 64, device="spyre")
+    x = torch.randn((64, 64), dtype=torch.float16, device="spyre")
+    y = torch.randn((64, 64), dtype=torch.float16, device="spyre")
 
     z = torch.matmul(x, y)
 
