@@ -168,14 +168,14 @@ if COMPILE_AIUPTI:  # Include kineto and libaiupti headers
     import torch
 
     KINETO_INCLUDE_DIR = Path(torch.__path__[0]) / "include" / "kineto"
-    COMMON_INCLUDE_DIR = Path(os.environ["SEN_COMMON_HEADERS"])
-    INCLUDE_DIRS += [KINETO_INCLUDE_DIR, COMMON_INCLUDE_DIR / "libaiupti"]
 
-    if os.environ.get("LIBAIUPTI_INSTALL_DIR"):
+    if os.environ.get("LIBAIUPTI_INSTALL_DIR", "") != "":
         LIBAIUPTI_DIR = Path(os.environ["LIBAIUPTI_INSTALL_DIR"])
-        _aiupti_lib = Path(os.environ["LIBAIUPTI_INSTALL_DIR"]) / "lib" / "libaiupti.so"
-        if _aiupti_lib.exists():
-            LIBRARY_DIRS += [LIBAIUPTI_DIR / "lib"]
+        LIBRARY_DIRS += [LIBAIUPTI_DIR / "lib"]
+        INCLUDE_DIRS += [KINETO_INCLUDE_DIR, LIBAIUPTI_DIR / "include"]
+    else:
+        COMMON_INCLUDE_DIR = Path(os.environ["SEN_COMMON_HEADERS"])
+        INCLUDE_DIRS += [KINETO_INCLUDE_DIR, COMMON_INCLUDE_DIR / "libaiupti"]
 
     LIBRARIES.insert(-1, "aiupti")  # Build dependency on flex
 
