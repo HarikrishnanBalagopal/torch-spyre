@@ -96,10 +96,19 @@ jobs:
       # leftover from when this ran on ubuntu-latest). Install the ingest
       # script's deps into the user site of the system python. `regex` is
       # required because ingest_xml.py does `import regex as re`.
+      #
+      # Versions are pinned exactly (not `--upgrade` to whatever PyPI serves at
+      # run time) so ingestion behaviour is reproducible and can't silently
+      # break when a new release lands. These pins were resolved and tested on
+      # the 2.0/torch-spyre:amd64 image (python 3.12.13); bump them deliberately.
       - name: Install Python dependencies
         run: |
-          python3 -m pip install --user --upgrade \
-            regex lxml clickhouse-connect clickhouse-driver requests
+          python3 -m pip install --user \
+            regex==2026.7.19 \
+            lxml==6.1.1 \
+            clickhouse-connect==1.6.0 \
+            clickhouse-driver==0.2.11 \
+            requests==2.34.2
 
       - name: Install gh CLI
         run: |

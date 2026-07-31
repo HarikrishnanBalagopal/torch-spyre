@@ -750,9 +750,12 @@ def main():
                 f"{sum(len(c['properties']) for c in cases)} properties"
             )
 
+    # Under --dry-run nothing is inserted, so the totals are what we parsed,
+    # not what we ingested. Label them accordingly.
+    verb = "parsed" if args.dry_run else "ingested"
     print(f"\nDone. {len(xml_files)} file(s) processed.")
-    print(f"  Test cases ingested:  {total_cases}")
-    print(f"  Benchmarks ingested:  {total_benchmarks}")
+    print(f"  Test cases {verb}:  {total_cases}")
+    print(f"  Benchmarks {verb}:  {total_benchmarks}")
 
 
 if __name__ == "__main__":
