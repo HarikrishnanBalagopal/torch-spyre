@@ -17,7 +17,7 @@
  */
 #pragma once
 
-#include <aiupti_activity.h>
+#include <libaiupti/aiupti_activity.h>
 #include <libkineto.h>
 #include <output_base.h>
 #include <time_since_epoch.h>

@@ -15,7 +15,7 @@
  *
  * Portions derived from libkineto AIU plugin.
  */
-#include <aiupti_runtime_cbid.h>
+#include <libaiupti/aiupti_runtime_cbid.h>
 
 #include <string>
 #include <unordered_map>
