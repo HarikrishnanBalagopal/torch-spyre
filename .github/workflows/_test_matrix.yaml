@@ -395,8 +395,8 @@ jobs:
   # emits an empty matrix for perf). `make tests TEST_TYPE=perf` shells out to
   # the spyre-perf-suite console script baked into the dev image and writes
   # report.xml into RESULTS_DIR. This job runs that single benchmark step on a
-  # card runner and uploads the report as report.xml (same artifact contract as
-  # the matrix suites, so report_empty_suites and any XML ingest pick it up).
+  # card runner. The reports are not uploaded as artifacts; the results are
+  # consumed only by the ClickHouse ingest path.
   #
   # POLICY: perf is a weekly-only suite -- it must NEVER run on a per-PR trigger
   # (it is expensive and holds a scarce card runner). The `github.event_name !=
@@ -476,23 +476,15 @@ jobs:
           source "${VENV}/bin/activate"
           make -C "${SRC_DIR}" tests TEST_TYPE=perf RESULTS_DIR="${RESULTS_DIR}"
 
-      - name: Upload perf report
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: report.xml
-          path: ${{ env.RESULTS_DIR }}/report.xml
-          if-no-files-found: warn
-          retention-days: 10
-
-      - name: Upload perf report (human-readable)
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: report.txt
-          path: ${{ env.RESULTS_DIR }}/report.txt
-          if-no-files-found: warn
-          retention-days: 10
+      # The benchmark reports are not uploaded as workflow artifacts; the
+      # results are consumed only by the ClickHouse ingest path.
+      - name: Confirm perf report was produced
+        run: |
+          # Fail if the benchmark did not write its report. Do not echo the
+          # report contents to the build log.
+          test -f "${RESULTS_DIR}/report.xml" \
+            || { echo "::error::perf run did not produce report.xml"; exit 1; }
+          echo "perf report written to \${RESULTS_DIR} (not uploaded)"
 
   # ---------------------------------------------------------------------------
   # Job 2: Multi-Spyre test matrix
@@ -637,7 +629,7 @@ jobs:
   report_empty_suites:
     name: Report empty test suites
     runs-on: ubuntu-latest
-    needs: [generate_matrix, test, test_multi_spyre, perf]
+    needs: [generate_matrix, test, test_multi_spyre]
     if: always()
 
     steps:
