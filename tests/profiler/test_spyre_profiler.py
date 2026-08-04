@@ -84,9 +84,9 @@ class TestSpyreProfiler(TestCase):
             with_stack=False,
         ) as prof:
             x *= 2
-            # TODO(#114): check with_stack=False once libaiupti + kineto-spyre are rebuilt in lockstep.
-            names = [e.name for e in prof.events()]
-            self.assertTrue("aten::mul_" in names)
+            # TODO(#114): check with_stack=True once libaiupti + kineto-spyre are rebuilt in lockstep.
+        names = [e.name for e in prof.events()]
+        self.assertTrue("aten::mul_" in names)
 
     @unittest.skipUnless(Test_spyre, "require spyre device")
     def test_event_list(self):
