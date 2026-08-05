@@ -22,6 +22,16 @@ on:
         description: Workflow name (model-module-tests | upstream-tests | model-ops-tests | integration-tests)
         required: false
         default: upstream-pytorch-tests
+      clickhouse_env:
+        description: >-
+          ClickHouse instance for a MANUAL re-ingest: "prod" (the CLICKHOUSE_*
+          secret set) or "dev" (the CLICKHOUSE_*_DEV set). Default prod. Lets a
+          manual re-ingest target dev WITHOUT editing this file and pushing to
+          main (see the env block below). The automatic workflow_run path always
+          uses prod: for a workflow_run event this input is empty, so the env
+          ternary falls through to the prod secret set.
+        required: false
+        default: prod
 
 concurrency:
   # Allow at most one ingest per triggering run (re-runs queue behind)
@@ -56,19 +66,18 @@ jobs:
       #   CLICKHOUSE_DB     e.g. spyre
       # ---------------------------------------------------------------------------
 
-      # DEV INSTANCE
-      # CLICKHOUSE_HOST: ${{ secrets.CLICKHOUSE_HOST_DEV }}
-      # CLICKHOUSE_PORT: ${{ secrets.CLICKHOUSE_PORT_DEV }}
-      # CLICKHOUSE_USER: ${{ secrets.CLICKHOUSE_USER_DEV }}
-      # CLICKHOUSE_PASS: ${{ secrets.CLICKHOUSE_PASS_DEV }}
-      # CLICKHOUSE_DB: ${{ secrets.CLICKHOUSE_DB_DEV }}
-
-      # PROD INSTANCE
-      CLICKHOUSE_HOST: ${{ secrets.CLICKHOUSE_HOST }}
-      CLICKHOUSE_PORT: ${{ secrets.CLICKHOUSE_PORT }}
-      CLICKHOUSE_USER: ${{ secrets.CLICKHOUSE_USER }}
-      CLICKHOUSE_PASS: ${{ secrets.CLICKHOUSE_PASS }}
-      CLICKHOUSE_DB: ${{ secrets.CLICKHOUSE_DB }}
+      # Instance selected by the clickhouse_env input: "dev" -> the *_DEV secret
+      # set, anything else (incl. "prod" and the empty value a workflow_run event
+      # sends) -> the plain PROD set. The `!= 'dev'` test (not `== 'prod'`) is
+      # deliberate: it keeps the AUTOMATIC workflow_run path on prod, since that
+      # event carries no input. A secret context key must be a literal name, so
+      # this is a per-name ternary, not a computed `secrets[...]` lookup. This is
+      # what lets a manual DEV re-ingest happen with no edit+push to main.
+      CLICKHOUSE_HOST: ${{ inputs.clickhouse_env != 'dev' && secrets.CLICKHOUSE_HOST || secrets.CLICKHOUSE_HOST_DEV }}
+      CLICKHOUSE_PORT: ${{ inputs.clickhouse_env != 'dev' && secrets.CLICKHOUSE_PORT || secrets.CLICKHOUSE_PORT_DEV }}
+      CLICKHOUSE_USER: ${{ inputs.clickhouse_env != 'dev' && secrets.CLICKHOUSE_USER || secrets.CLICKHOUSE_USER_DEV }}
+      CLICKHOUSE_PASS: ${{ inputs.clickhouse_env != 'dev' && secrets.CLICKHOUSE_PASS || secrets.CLICKHOUSE_PASS_DEV }}
+      CLICKHOUSE_DB: ${{ inputs.clickhouse_env != 'dev' && secrets.CLICKHOUSE_DB || secrets.CLICKHOUSE_DB_DEV }}
 
       # Metadata about the triggering run
       TRIGGERING_RUN_ID: ${{ github.event.workflow_run.id || inputs.gha_run_id }}
