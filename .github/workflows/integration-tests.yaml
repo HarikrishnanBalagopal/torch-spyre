@@ -153,6 +153,15 @@ jobs:
       repository: ${{ inputs.repository || '' }}
       test_type: ${{ inputs.test_type || 'device_critical' }}
       prebaked_image: ${{ inputs.prebaked_image }}
+    # ClickHouse connection for the perf job's inline benchmark ingest. Passed
+    # explicitly (not `secrets: inherit`) so only what _test_matrix declares is
+    # forwarded. Absent on a repo without these secrets => perf ingest no-ops.
+    secrets:
+      CLICKHOUSE_HOST: ${{ secrets.CLICKHOUSE_HOST }}
+      CLICKHOUSE_PORT: ${{ secrets.CLICKHOUSE_PORT }}
+      CLICKHOUSE_USER: ${{ secrets.CLICKHOUSE_USER }}
+      CLICKHOUSE_PASS: ${{ secrets.CLICKHOUSE_PASS }}
+      CLICKHOUSE_DB: ${{ secrets.CLICKHOUSE_DB }}
 
   # ----------------------------------------------------------------------------------
   # Fan-in gate job which is similar to run-spyre-unit-tests in torch_spyre_tests.yaml

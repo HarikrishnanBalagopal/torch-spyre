@@ -107,6 +107,25 @@ on:
         type: boolean
         default: false
 
+    secrets:
+      # ClickHouse connection for the perf job's inline benchmark ingest. The
+      # perf report.xml is written on the card runner and is NOT uploaded as an
+      # artifact (benchmark numbers must not become world-readable on a public
+      # repo), so it cannot ride the push-to-clickhouse.yaml artifact-download
+      # path the way the matrix suites do. Instead the perf job pushes it inline.
+      # All optional: a caller that omits them (or a non-perf run) simply skips
+      # the inline push, leaving every existing caller byte-for-byte unchanged.
+      CLICKHOUSE_HOST:
+        required: false
+      CLICKHOUSE_PORT:
+        required: false
+      CLICKHOUSE_USER:
+        required: false
+      CLICKHOUSE_PASS:
+        required: false
+      CLICKHOUSE_DB:
+        required: false
+
 defaults:
   run:
     shell: bash
@@ -424,6 +443,10 @@ jobs:
       # Flat results dir, matching the Makefile default and PR #3452. The suite
       # writes both report.txt and report.xml here.
       RESULTS_DIR: ${{ github.workspace }}/perf-results
+      # Mapped to env so the inline-ingest step can gate on it: secrets cannot be
+      # used in a step `if:`. Empty (caller passed no ClickHouse secrets) => the
+      # ingest step is skipped and the perf run still succeeds.
+      CLICKHOUSE_HOST: ${{ secrets.CLICKHOUSE_HOST }}
     steps:
       - name: Checkout composite actions
         if: ${{ !inputs.prebaked_image }}
@@ -485,6 +508,35 @@ jobs:
           test -f "${RESULTS_DIR}/report.xml" \
             || { echo "::error::perf run did not produce report.xml"; exit 1; }
           echo "perf report written to \${RESULTS_DIR} (not uploaded)"
+
+      # Push the perf report to ClickHouse INLINE on this card runner. The
+      # report is never uploaded as a workflow artifact (public repo: artifacts
+      # are world-readable and benchmark numbers must stay private), so it
+      # cannot ride the push-to-clickhouse.yaml artifact-download path the
+      # matrix suites use. The composite action is the SAME ingest
+      # implementation that workflow reuses, so there is one code path, not two.
+      # Gated on CLICKHOUSE_HOST: a caller that passes no ClickHouse secrets
+      # skips the push and the perf run still succeeds.
+      - name: Ingest perf report into ClickHouse (inline, no artifact)
+        if: ${{ env.CLICKHOUSE_HOST != '' }}
+        uses: ./.github/actions/ingest-xml-to-clickhouse
+        with:
+          xml-dir: ${{ env.RESULTS_DIR }}
+          workflow: ${{ github.workflow }}
+          branch: ${{ inputs.ref || github.event.pull_request.head.sha || github.ref_name }}
+          sha: ${{ inputs.ref || github.event.pull_request.head.sha || github.sha }}
+          run-id: ${{ github.run_id }}
+          triggered-at: ''
+          # perf never runs on pull_request (see the job `if:` above), so there
+          # is no PR to associate; leave empty.
+          pr-number: ''
+          trigger-type: perf
+          torch-spyre-dir: ${{ inputs.prebaked_image && env.PREBAKED_TORCH_SPYRE_DIR || 'torch-spyre' }}
+          clickhouse-host: ${{ secrets.CLICKHOUSE_HOST }}
+          clickhouse-port: ${{ secrets.CLICKHOUSE_PORT }}
+          clickhouse-user: ${{ secrets.CLICKHOUSE_USER }}
+          clickhouse-pass: ${{ secrets.CLICKHOUSE_PASS }}
+          clickhouse-db: ${{ secrets.CLICKHOUSE_DB }}
 
   # ---------------------------------------------------------------------------
   # Job 2: Multi-Spyre test matrix
