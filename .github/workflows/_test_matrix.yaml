@@ -448,16 +448,29 @@ jobs:
       # ingest step is skipped and the perf run still succeeds.
       CLICKHOUSE_HOST: ${{ secrets.CLICKHOUSE_HOST }}
     steps:
+      # ALWAYS sparse-checkout .github from the workflow ref, in BOTH prebaked
+      # and normal mode. `uses: ./.github/actions/*` resolves the action
+      # DEFINITION against $GITHUB_WORKSPACE/.github before any step of that
+      # action runs, so a composite action added on this branch must be present
+      # in the workspace even when the benchmark runs from a prebaked image. The
+      # matrix jobs symlink the baked .github instead, which is fine there because
+      # they only use actions old enough to be in every image; the perf job is the
+      # one that references a NEWER action (ingest-xml-to-clickhouse), so a symlink
+      # to an older baked .github fails to resolve it ("Can't find action.yml ...
+      # Did you forget to run actions/checkout"). A fresh sparse-checkout of just
+      # .github is tiny, is owned by the disposable runner workspace (a separate
+      # dir from PREBAKED_TORCH_SPYRE_DIR, so the baked tree is never mutated), and
+      # always carries the current actions + the .github/scripts the ingest action
+      # reads. The benchmark itself still runs from the baked source dir
+      # (PREBAKED_TORCH_SPYRE_DIR) below, so prebaked provenance for the RUN is
+      # unchanged.
       - name: Checkout composite actions
-        if: ${{ !inputs.prebaked_image }}
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          sparse-checkout: .github/actions
+          ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.sha }}
+          repository: ${{ inputs.repository || github.event.pull_request.head.repo.full_name || github.repository }}
+          sparse-checkout: .github
           sparse-checkout-cone-mode: false
-
-      - name: Expose baked composite actions in the workspace
-        if: ${{ inputs.prebaked_image }}
-        run: ln -sfn "${PREBAKED_TORCH_SPYRE_DIR}/.github" "${GITHUB_WORKSPACE}/.github"
 
       - if: ${{ !inputs.prebaked_image }}
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
