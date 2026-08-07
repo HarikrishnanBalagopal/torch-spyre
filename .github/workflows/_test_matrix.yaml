@@ -464,11 +464,19 @@ jobs:
       # reads. The benchmark itself still runs from the baked source dir
       # (PREBAKED_TORCH_SPYRE_DIR) below, so prebaked provenance for the RUN is
       # unchanged.
+      #
+      # This checkout MUST use the workflow ref (github.sha / github.repository),
+      # NOT inputs.ref. inputs.ref is the code-under-test ref (e.g. 'main'); the
+      # composite actions are part of the CI harness and live on the branch whose
+      # workflow file is running (this branch). ingest-xml-to-clickhouse exists
+      # only here, so checking out .github from inputs.ref='main' fetches a tree
+      # without it and `uses: ./.github/actions/ingest-xml-to-clickhouse` fails to
+      # resolve. github.sha is the ref this reusable workflow was called at.
       - name: Checkout composite actions
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.sha }}
-          repository: ${{ inputs.repository || github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.sha }}
+          repository: ${{ github.repository }}
           sparse-checkout: .github
           sparse-checkout-cone-mode: false
 
