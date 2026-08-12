@@ -68,6 +68,7 @@ from oot_framework.oot_test_utilities import (
     _build_test_entry_map,
     _select_entry_by_op_index,
     _select_entry_for_variant,
+    _union_tags_for_variant,
     _extract_op_name_from_method,
 )
 
@@ -735,10 +736,24 @@ class OOTTestBase(PrivateUse1TestBase):  # type: ignore[name-defined]  # noqa: F
                         cls.GLOBAL_SUPPORTED_DTYPES,
                     )
 
-            # Tags for this specific variant = tags from the resolved entry only
-            variant_tags: List[str] = (
-                list(resolved_entry.tags) if resolved_entry else []
-            )
+            # Tags for this specific variant = union of the tags from EVERY
+            # entry that applies to this variant, not just the single entry
+            # resolved above for mode/dtype behaviour.  A variant resolves to
+            # one entry (dtype-driven, mode-blind), but declarative tags such
+            # as slow__plat_<arch> may be declared on a different matching
+            # entry.  Taking tags from resolved_entry alone dropped those
+            # tags, so run_test.sh --skip-slow (a "-m not slow__plat_<arch>"
+            # filter) could not deselect a test whose slow tag lived on a
+            # sibling entry.  Union across matching entries so any declared
+            # tag becomes a mark.  resolved_entry still drives mode/dtype.
+            if all_entries_for_name:
+                variant_tags: List[str] = _union_tags_for_variant(
+                    all_entries_for_name,
+                    method_name,
+                    cls.GLOBAL_SUPPORTED_DTYPES,
+                )
+            else:
+                variant_tags = list(resolved_entry.tags) if resolved_entry else []
 
             enabled, reason, is_xfail, is_strict = cls._should_run(
                 method_name=method_name,

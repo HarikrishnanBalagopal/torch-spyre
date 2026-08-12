@@ -393,6 +393,60 @@ def _select_entry_for_variant(
     return entries[0]
 
 
+def _union_tags_for_variant(
+    entries: List[Any],
+    method_name: str,
+    global_supported_dtypes: Optional[Set[torch.dtype]],
+) -> List[str]:
+    """Union YAML tags from every entry that applies to *method_name*.
+
+    A concrete variant resolves to a single TestEntry for its mode/dtype
+    behaviour (see ``_select_entry_for_variant``), but declarative tags are
+    not mode-specific: a ``slow__plat_*`` tag declared on ANY entry that
+    covers this variant must be applied as a pytest mark, otherwise a
+    marker filter such as ``-m "not slow__plat_s390x"`` (run_test.sh
+    ``--skip-slow``) cannot deselect the test.
+
+    ``entries`` are already the entries whose name pattern matched this
+    test's base name (built by ``instantiate_test``), so the only remaining
+    per-variant discriminator is dtype.  We therefore union the tags of
+    every entry that is dtype-compatible with this variant:
+
+      - an entry with no dtype restriction always applies;
+      - an entry with a dtype restriction applies only when the variant's
+        dtype (if any) is in its set.
+
+    Order is preserved (first appearance wins) so the result is stable.
+    """
+    # Deferred import to avoid a circular dependency at module load time.
+    from .oot_test_matching import extract_dtype_from_name, parse_dtype
+
+    dtype_str = extract_dtype_from_name(method_name)
+    variant_dtype: Optional[torch.dtype] = None
+    if dtype_str:
+        try:
+            variant_dtype = parse_dtype(dtype_str)
+        except ValueError:
+            pass
+
+    union: List[str] = []
+    seen: Set[str] = set()
+    for entry in entries:
+        eset = _entry_dtype_set(entry, global_supported_dtypes)
+        # An entry with a dtype restriction only contributes its tags when
+        # the variant's dtype is covered by that set.  When we cannot read a
+        # dtype off the method name we cannot exclude the entry on dtype
+        # grounds, so it still contributes (matching the selector's wildcard
+        # behaviour).
+        if eset is not None and variant_dtype is not None and variant_dtype not in eset:
+            continue
+        for tag in entry.tags or []:
+            if tag not in seen:
+                seen.add(tag)
+                union.append(tag)
+    return union
+
+
 def _extract_op_name_from_method(
     method_name: str, base_test_name: str, oot_device_type: str
 ) -> Optional[str]:
