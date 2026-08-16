@@ -700,6 +700,20 @@ def main():
                 )
                 continue
 
+            # A benchmark XML that parsed to zero benchmark rows is not a run: it
+            # produced no numbers. Some result dirs also carry a non-suite stub XML
+            # (e.g. cpu_kernel_report_tsp.xml) whose testcases have "benchmark" in
+            # the classname but do not match the perf-name pattern, so every case is
+            # skipped and this list comes back empty. Inserting a benchmark_runs row
+            # for it would create an orphan run with 0 ops / 0 models that shows up on
+            # the dashboard as an empty run. Skip it instead of recording a hollow run.
+            if not benchmarks:
+                print(
+                    f"  No benchmark rows parsed from {xml_path.name}: "
+                    "skipping (not recording an empty benchmark run)."
+                )
+                continue
+
             # benchmark_runs.run_id is UInt64 — use a random 64-bit int
             run_id = uuid.uuid4().int >> 64  # positive 64-bit int
             print(f"  run_id={run_id}  benchmarks={len(benchmarks)}")
