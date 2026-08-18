@@ -93,6 +93,21 @@ on:
         type: string
         default: full
 
+      # How much of the perf suite the perf job runs (TEST_TYPE=perf only).
+      # Forwarded to the Makefile as PERF_PROFILE:
+      #   full  -- the whole suite (the weekly benchmark; the default, so every
+      #            existing caller is byte-for-byte unchanged)
+      #   quick -- one small op. It still emits report.xml, so the ClickHouse
+      #            ingest path is identical; it just covers far fewer shapes.
+      #            Use it to iterate on the perf pipeline (runner bring-up,
+      #            ingest) without waiting for the full run.
+      # Ignored by every non-perf run.
+      perf_profile:
+        description: 'Perf suite size when test_type=perf: full | quick'
+        required: false
+        type: string
+        default: full
+
       # Spyre-Next integration path: test the PRE-BAKED dev image directly instead
       # of checking out + rebuilding torch-spyre on the runner. The ephemeral ARC
       # runner is FROM torch-spyre-dev, which already has the editable-installed
@@ -510,7 +525,8 @@ jobs:
           set -u
           # shellcheck disable=SC1091
           source "${VENV}/bin/activate"
-          make -C "${SRC_DIR}" tests TEST_TYPE=perf RESULTS_DIR="${RESULTS_DIR}"
+          make -C "${SRC_DIR}" tests TEST_TYPE=perf RESULTS_DIR="${RESULTS_DIR}" \
+            PERF_PROFILE="${{ inputs.perf_profile || 'full' }}"
 
       # The benchmark reports are not uploaded as workflow artifacts; the
       # results are consumed only by the ClickHouse ingest path.
