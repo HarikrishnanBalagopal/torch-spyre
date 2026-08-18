@@ -111,6 +111,15 @@ on:
         required: false
         type: string
         default: dev
+      perf_profile:
+        description: >-
+          Perf suite size when test_type=perf: "full" (the whole suite, the
+          weekly default) or "quick" (one small op, far fewer shapes, still
+          writes report.xml so ingest is unchanged). Use quick to iterate on
+          the perf pipeline fast. Ignored by every non-perf run.
+        required: false
+        type: string
+        default: full
 
 concurrency:
   group: ${{ github.workflow }}-${{ (github.event_name == 'pull_request' && github.event.pull_request.html_url) || (github.event_name == 'workflow_dispatch'
@@ -163,6 +172,7 @@ jobs:
       ref: ${{ inputs.ref || '' }}
       repository: ${{ inputs.repository || '' }}
       test_type: ${{ inputs.test_type || 'device_critical' }}
+      perf_profile: ${{ inputs.perf_profile || 'full' }}
       prebaked_image: ${{ inputs.prebaked_image }}
     # ClickHouse connection for the perf job's inline benchmark ingest. Passed
     # explicitly (not `secrets: inherit`) so only what _test_matrix declares is

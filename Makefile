@@ -24,7 +24,8 @@ TEST_CONFIGS ?= tests/configs/torch_spyre_tests
 #                      not just TEST_CONFIGS -- so `make tests TEST_TYPE=trunk`
 #                      matches what actually runs on a push to main
 #   perf             — spyre-perf-suite benchmark (shells out, not a pytest
-#                      config suite); writes report.xml into RESULTS_DIR
+#                      config suite); writes report.xml into RESULTS_DIR.
+#                      Size is set by PERF_PROFILE (full|quick, default full).
 #   suite_<group>    — all configs inside the <group>/ sub-directory
 #                      (e.g. suite_inductor, suite_tensors)
 #   <label>          — any arbitrary label defined in test_suite_config.labels
@@ -47,6 +48,26 @@ TRUNK_CONFIG_DIRS := tests/configs/torch_spyre_tests tests/configs/model_ops_tes
 # ClickHouse push step (ingest_xml.py globs *.xml non-recursively) finds it
 # alongside every other suite's JUnit XML, with no per-suite subdirectory.
 RESULTS_DIR ?= /tmp/results
+
+# How much of the perf suite TEST_TYPE=perf runs:
+#   full   : the whole suite (all ops + Granite), minus experimental shapes.
+#            This is the default and matches the weekly benchmark.
+#   quick  : one small op (softmax at [1, 512, 4096]). It still emits the same
+#            report.txt/report.xml, so the ingest path is unchanged; it just
+#            covers far fewer shapes. Use it to iterate on the perf pipeline
+#            (runner bring-up, ingest, upload) without waiting for the full run.
+# Both modes shell out to the spyre-perf-suite console script and both pass an
+# explicit --report, so the report filename stays report.txt/report.xml in
+# either mode.
+PERF_PROFILE ?= full
+
+ifeq ($(PERF_PROFILE),quick)
+_PERF_SUITE_ARGS := --op softmax --shape 1 512 4096 --stacks torch-spyre
+else ifeq ($(PERF_PROFILE),full)
+_PERF_SUITE_ARGS := --no-experimental --stacks torch-spyre
+else
+$(error PERF_PROFILE must be 'full' or 'quick', got '$(PERF_PROFILE)')
+endif
 
 # Path to the OOT config checker script (relative to repo root)
 CHECK_SCRIPT  := tests/scripts/check_oot_configs.py
@@ -80,7 +101,7 @@ precommit: ## Run all pre-commit hooks against every file
 # ---------------------------------------------------------------------------
 
 .PHONY: tests
-tests: ## Run torch spyre tests. Narrow scope with TEST_TYPE=smoke|core|full|trunk|perf|suite_<group>. TEST_CONFIGS may point at a config directory (filtered by TEST_TYPE) or a single config yaml file (run directly); ignored when TEST_TYPE=trunk (see TRUNK_CONFIG_DIRS).
+tests: ## Run torch spyre tests. Narrow scope with TEST_TYPE=smoke|core|full|trunk|perf|suite_<group>. With TEST_TYPE=perf, PERF_PROFILE=full|quick picks the suite size (quick = one small op, still emits report.xml). TEST_CONFIGS may point at a config directory (filtered by TEST_TYPE) or a single config yaml file (run directly); ignored when TEST_TYPE=trunk (see TRUNK_CONFIG_DIRS).
 # TEST_TYPE=perf is a benchmark mode, not a pytest-config suite: it does not
 # run the OOT config machinery below. It shells out to the installed
 # spyre-perf-suite console script (a wheel dependency of the dev image) and
@@ -89,7 +110,7 @@ tests: ## Run torch spyre tests. Narrow scope with TEST_TYPE=smoke|core|full|tru
 # suite, so no new Makefile target or Jenkins wiring is needed.
 ifeq ($(TEST_TYPE),perf)
 	@mkdir -p "$(RESULTS_DIR)"
-	spyre-perf-suite --no-experimental --stacks torch-spyre \
+	spyre-perf-suite $(_PERF_SUITE_ARGS) \
 		--report "$(RESULTS_DIR)/report.txt"
 	@test -f "$(RESULTS_DIR)/report.xml" || \
 		{ echo "ERROR: spyre-perf-suite did not emit $(RESULTS_DIR)/report.xml" >&2; \
