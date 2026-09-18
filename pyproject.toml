@@ -11,7 +11,7 @@ requires = [
     "pyyaml", # needed for codegen
     "regex",
     "setuptools>=77.0.3",  # match upstream torch dependency range
-    "setuptools_scm>=8",
+    "setuptools_scm>=10",
     "torch~=2.13.0",
 #    "torch>=2.13.0",
     "wheel"
