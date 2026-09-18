@@ -194,7 +194,7 @@ def _get_dxp_version() -> str:
 @lru_cache(maxsize=1)
 def _get_torch_spyre_version() -> str:
     """Return the torch_spyre package version string."""
-    from torch_spyre.version import __version__
+    from torch_spyre._version import __version__
 
     return __version__
 
