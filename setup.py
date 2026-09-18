@@ -191,7 +191,6 @@ class clean(Command):
                 shutil.rmtree(str(path), ignore_errors=True)
 
 
-
 if __name__ == "__main__":
     import sys
 
