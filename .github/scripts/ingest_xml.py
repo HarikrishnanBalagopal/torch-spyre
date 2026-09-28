@@ -1072,6 +1072,43 @@ def insert_properties(client, run_id: str, cases: list[dict]):
         )
 
 
+# v1 rows carry a minted uuid4; v2 rows a uuid5 derived from the run's coordinates. Nothing
+# recorded the pair, so a v1 run_id -- the id that circulates, because it is what the
+# dashboard and test_runs show -- could not reach v2's run_url, and v1 has no url column of
+# its own. Both ids are in scope together only here, so this is where the link gets written.
+#
+# Stored in run_properties because it needs no DDL: the table is already keyed on run_id and
+# prop_name is free-form. case_id is the zero uuid, not a real case -- the fact is about the
+# run, not about any one test.
+V2_RUN_ID_PROP = "v2_run_id"
+_ZERO_UUID = "00000000-0000-0000-0000-000000000000"
+
+
+def insert_v2_run_id_link(client, run_id: str, v2_run_id: str, triggered_at):
+    """Record the v1 run_id -> v2 run_id pair so a v1 id can reach v2's run_url."""
+    if not (run_id and v2_run_id):
+        return
+    client.insert(
+        "run_properties",
+        [
+            [
+                run_id,
+                _ZERO_UUID,
+                V2_RUN_ID_PROP,
+                str(v2_run_id),
+                triggered_at.replace(tzinfo=None),
+            ]
+        ],
+        column_names=[
+            "run_id",
+            "case_id",
+            "prop_name",
+            "prop_value",
+            "triggered_at",
+        ],
+    )
+
+
 # ---------------------------------------------------------------------------
 # ── SCHEMA v2: test_cases + test_case_runs ─────────────────────────────────
 #
@@ -1641,6 +1678,12 @@ def main():
                     _v2_run_id = run_id_for(
                         args, run_id, args.platform or run["platform"], _v2_tier
                     )
+                    if _v2_run_id and args.write_v1:
+                        # Written even when the v2 cases below are skipped as already
+                        # ingested: the link is about the ids, not about this file.
+                        insert_v2_run_id_link(
+                            client, run_id, _v2_run_id, run["triggered_at"]
+                        )
                     if not _v2_run_id:
                         # Loud, because a blank run_id means these cases reach v2 unjoinable
                         # to any artifact -- and that reads downstream as "no tests ran".

@@ -684,3 +684,48 @@ def test_a_write_failure_never_propagates(ingest):
 
     legs = {(_RUN_ID, "regression"): {"failed": 0, "total": 1, "duration_s": 1.0}}
     ingest._write_artifact_verdicts(Boom(), "db", _args(), legs)
+
+
+# ---------------------------------------------------------------------------
+# v1 run_id -> v2 run_id link (run_properties)
+# ---------------------------------------------------------------------------
+
+_V1_RUN_ID = "71fe5f30-6ad1-4698-a4c4-98bc67ab7f22"
+_V2_RUN_ID = "418dd18a-345d-5ffa-bb68-916125ed5e18"
+
+
+def test_the_link_row_carries_both_ids(ingest):
+    # The whole point: a v1 run_id has to be able to reach the v2 run_id, which is the
+    # only id v2's run_url is filed under.
+    c = FakeClient()
+    ingest.insert_v2_run_id_link(
+        c, _V1_RUN_ID, _V2_RUN_ID, datetime(2026, 9, 25, 12, 9, tzinfo=UTC)
+    )
+    table, rows, columns = c.inserts[0]
+    assert table == "run_properties"
+    row = dict(zip(columns, rows[0], strict=True))
+    assert row["run_id"] == _V1_RUN_ID
+    assert row["prop_name"] == ingest.V2_RUN_ID_PROP
+    assert row["prop_value"] == _V2_RUN_ID
+
+
+def test_the_link_row_is_naive_like_its_sibling_inserts(ingest):
+    # run_properties.triggered_at is DateTime; a tz-aware value shifts the stored hour.
+    c = FakeClient()
+    ingest.insert_v2_run_id_link(
+        c, _V1_RUN_ID, _V2_RUN_ID, datetime(2026, 9, 25, 12, 9, tzinfo=UTC)
+    )
+    stored = dict(zip(c.inserts[0][2], c.inserts[0][1][0], strict=True))["triggered_at"]
+    assert stored.tzinfo is None
+    assert stored == datetime(2026, 9, 25, 12, 9)
+
+
+@pytest.mark.parametrize(
+    ("v1", "v2"),
+    [("", _V2_RUN_ID), (_V1_RUN_ID, ""), ("", "")],
+)
+def test_a_missing_id_writes_nothing(ingest, v1, v2):
+    # Half a link is worse than none: it would read as a resolvable pair.
+    c = FakeClient()
+    ingest.insert_v2_run_id_link(c, v1, v2, datetime(2026, 9, 25, 12, 9, tzinfo=UTC))
+    assert c.inserts == []
