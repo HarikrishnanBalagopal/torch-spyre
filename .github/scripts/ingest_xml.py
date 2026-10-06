@@ -646,7 +646,12 @@ def _bench_entries(records: list) -> list:
 
 # quality / regression_eligible come from a spyre-dashboard migration.
 # Omit rather than ALTER ADD when they have not been applied.
-_BENCHMARK_RUN_OPTIONAL_COLUMNS = ("run_type", "quality", "regression_eligible")
+_BENCHMARK_RUN_OPTIONAL_COLUMNS = (
+    "run_type",
+    "quality",
+    "regression_eligible",
+    "run_url",
+)
 
 
 def insert_benchmark_run(client, run_id: int, run_meta: dict) -> None:
@@ -663,6 +668,10 @@ def insert_benchmark_run(client, run_id: int, run_meta: dict) -> None:
         "run_type": run_meta.get("run_type", "benchmark"),
         "quality": quality,
         "regression_eligible": eligible,
+        # The CI run behind the row, so Spyre View can link a benchmark back to
+        # the build that produced it. Same value v2 stores in its props; '' when
+        # there is no run to name, which the dashboard renders as no link.
+        "run_url": run_meta.get("run_url", ""),
     }
     columns = list(values)
     absent = _absent_columns(client, "benchmark_runs", _BENCHMARK_RUN_OPTIONAL_COLUMNS)
@@ -1321,7 +1330,7 @@ def _write_named_artifact_verdicts(client, v2db: str, args, legs: dict) -> None:
             file=sys.stderr,
         )
         return
-    run_url = _opt(args, "run_url") or _gha_run_url(args)
+    run_url = run_url_of(args)
     source = "jenkins" if _opt(args, "jenkins_run_key") else "gha"
     tag_props = {"run_url": run_url, "source": source}
     aid = insert_artifact(
@@ -1379,7 +1388,7 @@ def _write_gha_artifact_verdicts(client, v2db: str, args, legs: dict) -> None:
             repo=args.repository,
             git_ref=args.branch,
             git_sha=args.sha,
-            run_url=_opt(args, "run_url") or _gha_run_url(args),
+            run_url=run_url_of(args),
             attempt=getattr(args, "run_attempt", 0),
         )
         if wrote:
@@ -1388,6 +1397,17 @@ def _write_gha_artifact_verdicts(client, v2db: str, args, legs: dict) -> None:
                 f"[{tier}] state={_leg_state(acc['failed'], acc['total'])} "
                 f"under run_id={run_id}"
             )
+
+
+def run_url_of(args) -> str:
+    """The CI run behind these rows: an explicit --run-url (Jenkins $BUILD_URL)
+    else the GHA run derived from --repository/--gha-run-id. '' when neither is
+    given, which the dashboard renders as no link rather than a dead one.
+
+    v1 benchmark_runs.run_url and the v2 props share this one resolution so the
+    two tables cannot disagree about where a run came from.
+    """
+    return _opt(args, "run_url") or _gha_run_url(args)
 
 
 def _gha_run_url(args) -> str:
@@ -1608,6 +1628,7 @@ def main():
             print(f"  run_id={run_id}  kernels={len(kernels)}")
 
             if args.write_v1:
+                run_meta["run_url"] = run_url_of(args)
                 insert_benchmark_run(client, run_id, run_meta)
                 insert_perf_kernels(client, run_id, kernels)
 
@@ -1691,6 +1712,7 @@ def main():
             print(f"  run_id={run_id}  benchmarks={len(benchmarks)}")
 
             if args.write_v1:
+                run_meta["run_url"] = run_url_of(args)
                 insert_benchmark_run(client, run_id, run_meta)
                 insert_perf_benchmarks(client, run_id, benchmarks)
 

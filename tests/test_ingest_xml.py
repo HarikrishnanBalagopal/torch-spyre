@@ -354,6 +354,7 @@ FULL_RUN_SCHEMA = {
         "run_type",
         "quality",
         "regression_eligible",
+        "run_url",
     ],
     "perf_benchmarks": [
         "benchmark_id",
@@ -550,6 +551,86 @@ def test_quality_columns_are_omitted_when_absent(ingest):
     assert "quality" not in columns
     assert "regression_eligible" not in columns
     assert len(rows[0]) == len(columns)
+
+
+def test_run_url_is_stored_when_the_column_exists(ingest):
+    """A Jenkins $BUILD_URL reaches benchmark_runs so the dashboard can link it."""
+    client = FakeClient(dict(FULL_RUN_SCHEMA))
+    build = (
+        "https://sys-zos-team-ai-sw-acceleration-jenkins.swg-devops.com"
+        "/job/Spyre/job/component-build/36564/"
+    )
+    ingest.insert_benchmark_run(
+        client,
+        1,
+        {
+            "source_file": "report.xml",
+            "created_at": datetime.now(UTC),
+            "version_info": json.dumps(FULL_PROVENANCE),
+            "run_url": build,
+        },
+    )
+    _, rows, columns = client.inserts[0]
+    assert "run_url" in columns
+    assert rows[0][columns.index("run_url")] == build
+
+
+def test_run_url_defaults_to_blank_not_null(ingest):
+    """No run to name must store '' (String column), which renders as no link."""
+    client = FakeClient(dict(FULL_RUN_SCHEMA))
+    ingest.insert_benchmark_run(
+        client,
+        1,
+        {
+            "source_file": "report.xml",
+            "created_at": datetime.now(UTC),
+            "version_info": json.dumps(FULL_PROVENANCE),
+        },
+    )
+    _, rows, columns = client.inserts[0]
+    assert rows[0][columns.index("run_url")] == ""
+
+
+def test_run_url_is_omitted_when_the_column_is_absent(ingest):
+    """Deploys before the spyre-dashboard migration: drop it, do not fail."""
+    schema = {
+        "benchmark_runs": [
+            c for c in FULL_RUN_SCHEMA["benchmark_runs"] if c != "run_url"
+        ]
+    }
+    client = FakeClient(schema)
+    ingest.insert_benchmark_run(
+        client,
+        1,
+        {
+            "source_file": "report.xml",
+            "created_at": datetime.now(UTC),
+            "version_info": json.dumps(FULL_PROVENANCE),
+            "run_url": "https://example.invalid/job/x/1/",
+        },
+    )
+    _, rows, columns = client.inserts[0]
+    assert "run_url" not in columns
+    assert len(rows[0]) == len(columns)
+
+
+def test_run_url_of_prefers_explicit_over_derived_gha(ingest):
+    """--run-url wins; otherwise the GHA run is derived; otherwise ''."""
+    build = "https://jenkins.example.invalid/job/Spyre/job/component-build/36564/"
+
+    class Args:
+        run_url = ""
+        repository = "torch-spyre/torch-spyre"
+        gha_run_id = "34574971889"
+
+    a = Args()
+    assert ingest.run_url_of(a) == (
+        "https://github.com/torch-spyre/torch-spyre/actions/runs/34574971889"
+    )
+    a.run_url = build
+    assert ingest.run_url_of(a) == build, "explicit --run-url must win"
+    a.run_url, a.gha_run_id = "", ""
+    assert ingest.run_url_of(a) == "", "no run to name must be blank, not a partial url"
 
 
 def test_success_full_provenance_inserts_benchmark_rows(ingest, monkeypatch, tmp_path):
