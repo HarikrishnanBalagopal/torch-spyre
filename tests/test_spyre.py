@@ -88,7 +88,7 @@ _SCALAR_ADD_SKIP_INT = pytest.mark.skip(
 
 # TODO:ISSUE: https://github.com/torch-spyre/torch-spyre/issues/1588
 _SCALAR_ADD_SKIP_UINT8 = pytest.mark.skip(
-    reason="uint8 host transfers unsupported: host format SENUINT32 is 4 bytes, PyTorch stores 1 (deeptools 4843)"
+    reason="uint8 host transfers unsupported: host format SENUINT32 is 4 bytes, PyTorch stores 1 (#1588)"
 )
 
 _SCALAR_ADD_FALLBACK_FULL_WARN = r"torch\.ops\.spyre\.full is falling back to cpu"
