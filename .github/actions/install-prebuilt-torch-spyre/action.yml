@@ -49,6 +49,83 @@ runs:
         run-id: ${{ inputs.run_id }}
         github-token: ${{ inputs.github_token }}
 
+    # download-artifact can leave a TRUNCATED wheel behind and still report
+    # outcome=success: it computes the digest in the stream's `close` handler, so a
+    # stream that dies early skips both the digest and the "Total of N artifact(s)
+    # downloaded" line, and a mismatch is only a core.warning (never a failure).
+    # uv is then the first thing to touch the bytes and takes the blame with
+    # "invalid package format / unable to locate the end of central directory
+    # record".
+    #
+    # Test the zip and RE-FETCH it when it is bad, so a transient truncation
+    # self-heals instead of reddening the suite. Same pattern and reason as the
+    # ingest fetch added in #5370 (push-to-clickhouse.yaml): "retried whole, since
+    # a truncated zip only fails at unzip".
+    - name: Verify the wheel, re-fetching a truncated download
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token || github.token }}
+        ARTIFACT_NAME: ${{ inputs.artifact_name }}
+        ARTIFACT_RUN_ID: ${{ inputs.run_id || github.run_id }}
+      run: |
+        set -uo pipefail
+        DEST="$GITHUB_WORKSPACE/prebuilt-wheel"
+
+        # testzip() reads every member's CRC, so it catches a tail-truncated zip as
+        # well as corrupted contents. It deliberately does NOT validate wheel
+        # metadata: the job here is to detect an incomplete transfer, not to
+        # re-implement the installer.
+        #
+        # testzip() RETURNS the first bad member's name and raises nothing, so it
+        # must be compared against None explicitly: `python3 -c "...testzip()"`
+        # alone exits 0 on a CRC-corrupt archive and would pass validation. Only a
+        # structurally unreadable zip (the truncation case) raises BadZipFile.
+        # Stderr is dropped so a bad zip reports as one warning rather than a
+        # python traceback that reads like a real crash.
+        good() {
+          local w
+          w="$(ls -1 "$DEST"/*.whl 2>/dev/null | head -1)"
+          [[ -n "$w" ]] || return 1
+          # One line on purpose: an unindented heredoc would terminate this YAML
+          # block scalar. `or sys.exit(...)` fires only when testzip() returns a
+          # member name, since None is falsy and a non-empty name is truthy.
+          python3 -c "import sys, zipfile; \
+            zipfile.ZipFile(sys.argv[1]).testzip() is None \
+            or sys.exit('corrupt zip member')" "$w" 2>/dev/null
+        }
+
+        ATTEMPTS=3
+        for attempt in $(seq 1 "$ATTEMPTS"); do
+          if good; then
+            # Same selection as the install step below (ls -1 | head -1), so the
+            # wheel verified here is the wheel installed.
+            ls -l "$(ls -1 "$DEST"/*.whl | head -1)"
+            exit 0
+          fi
+          # Nothing left to verify after the last attempt: don't sleep or re-fetch.
+          [[ "$attempt" -eq "$ATTEMPTS" ]] && break
+          echo "::warning::Prebuilt wheel is missing or not a readable zip" \
+            "(truncated download), attempt ${attempt}/${ATTEMPTS}; re-fetching" \
+            "'${ARTIFACT_NAME}' from run ${ARTIFACT_RUN_ID}."
+          sleep $((attempt * 5))
+          # A failed mkdir must not masquerade as a bad artifact: without `set -e`
+          # the loop would otherwise run to exhaustion and blame the upload.
+          rm -rf "$DEST"
+          if ! mkdir -p "$DEST"; then
+            echo "::error::Cannot create the wheel download directory ${DEST}." >&2
+            exit 1
+          fi
+          # Re-fetch: `gh run download` writes the same layout download-artifact
+          # does, and a fresh request gets a fresh blob stream. A failed fetch is
+          # not fatal here; the next attempt's verification decides.
+          gh run download "${ARTIFACT_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
+            --name "${ARTIFACT_NAME}" --dir "$DEST" || true
+        done
+
+        echo "::error::Prebuilt wheel '${ARTIFACT_NAME}' did not transfer" \
+          "completely after 3 attempts; the uploaded artifact may itself be bad." >&2
+        exit 1
+
     - name: Install prebuilt wheel
       shell: bash
       env:
