@@ -71,25 +71,43 @@ runs:
         set -uo pipefail
         DEST="$GITHUB_WORKSPACE/prebuilt-wheel"
 
+        # testzip() reads every member's CRC, so it catches a tail-truncated zip as
+        # well as corrupted contents. It deliberately does NOT validate wheel
+        # metadata: the job here is to detect an incomplete transfer, not to
+        # re-implement the installer. Stderr is dropped so a bad zip reports as one
+        # warning rather than a python traceback that reads like a real crash.
         good() {
           local w
           w="$(ls -1 "$DEST"/*.whl 2>/dev/null | head -1)"
           [[ -n "$w" ]] || return 1
-          python3 -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).testzip()" "$w"
+          python3 -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).testzip()" \
+            "$w" 2>/dev/null
         }
 
-        for attempt in 1 2 3; do
+        ATTEMPTS=3
+        for attempt in $(seq 1 "$ATTEMPTS"); do
           if good; then
+            # Same selection as the install step below (ls -1 | head -1), so the
+            # wheel verified here is the wheel installed.
             ls -l "$(ls -1 "$DEST"/*.whl | head -1)"
             exit 0
           fi
+          # Nothing left to verify after the last attempt: don't sleep or re-fetch.
+          [[ "$attempt" -eq "$ATTEMPTS" ]] && break
           echo "::warning::Prebuilt wheel is missing or not a readable zip" \
-            "(truncated download), attempt ${attempt}/3; re-fetching" \
+            "(truncated download), attempt ${attempt}/${ATTEMPTS}; re-fetching" \
             "'${ARTIFACT_NAME}' from run ${ARTIFACT_RUN_ID}."
           sleep $((attempt * 5))
-          rm -rf "$DEST"; mkdir -p "$DEST"
-          # Re-fetch by artifact id: `gh run download` writes the same layout
-          # download-artifact does, and a fresh request gets a fresh blob stream.
+          # A failed mkdir must not masquerade as a bad artifact: without `set -e`
+          # the loop would otherwise run to exhaustion and blame the upload.
+          rm -rf "$DEST"
+          if ! mkdir -p "$DEST"; then
+            echo "::error::Cannot create the wheel download directory ${DEST}." >&2
+            exit 1
+          fi
+          # Re-fetch: `gh run download` writes the same layout download-artifact
+          # does, and a fresh request gets a fresh blob stream. A failed fetch is
+          # not fatal here; the next attempt's verification decides.
           gh run download "${ARTIFACT_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
             --name "${ARTIFACT_NAME}" --dir "$DEST" || true
         done
