@@ -74,14 +74,24 @@ runs:
         # testzip() reads every member's CRC, so it catches a tail-truncated zip as
         # well as corrupted contents. It deliberately does NOT validate wheel
         # metadata: the job here is to detect an incomplete transfer, not to
-        # re-implement the installer. Stderr is dropped so a bad zip reports as one
-        # warning rather than a python traceback that reads like a real crash.
+        # re-implement the installer.
+        #
+        # testzip() RETURNS the first bad member's name and raises nothing, so it
+        # must be compared against None explicitly: `python3 -c "...testzip()"`
+        # alone exits 0 on a CRC-corrupt archive and would pass validation. Only a
+        # structurally unreadable zip (the truncation case) raises BadZipFile.
+        # Stderr is dropped so a bad zip reports as one warning rather than a
+        # python traceback that reads like a real crash.
         good() {
           local w
           w="$(ls -1 "$DEST"/*.whl 2>/dev/null | head -1)"
           [[ -n "$w" ]] || return 1
-          python3 -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).testzip()" \
-            "$w" 2>/dev/null
+          # One line on purpose: an unindented heredoc would terminate this YAML
+          # block scalar. `or sys.exit(...)` fires only when testzip() returns a
+          # member name, since None is falsy and a non-empty name is truthy.
+          python3 -c "import sys, zipfile; \
+            zipfile.ZipFile(sys.argv[1]).testzip() is None \
+            or sys.exit('corrupt zip member')" "$w" 2>/dev/null
         }
 
         ATTEMPTS=3
