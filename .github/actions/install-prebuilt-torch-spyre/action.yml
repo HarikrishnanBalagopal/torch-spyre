@@ -55,23 +55,48 @@ runs:
     # downloaded" line, and a mismatch is only a core.warning (never a failure).
     # uv is then the first thing to touch the bytes and takes the blame with
     # "invalid package format / unable to locate the end of central directory
-    # record". Test the zip here so a bad download fails as a bad download.
-    # Same pattern (and reason) as push-to-clickhouse.yaml's artifact fetch.
-    - name: Verify the wheel is a complete zip
+    # record".
+    #
+    # Test the zip and RE-FETCH it when it is bad, so a transient truncation
+    # self-heals instead of reddening the suite. Same pattern and reason as the
+    # ingest fetch added in #5370 (push-to-clickhouse.yaml): "retried whole, since
+    # a truncated zip only fails at unzip".
+    - name: Verify the wheel, re-fetching a truncated download
       shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token || github.token }}
+        ARTIFACT_NAME: ${{ inputs.artifact_name }}
+        ARTIFACT_RUN_ID: ${{ inputs.run_id || github.run_id }}
       run: |
-        WHEEL="$(ls -1 "$GITHUB_WORKSPACE"/prebuilt-wheel/*.whl 2>/dev/null | head -1)"
-        if [[ -z "$WHEEL" ]]; then
-          echo "::error::No prebuilt wheel found under prebuilt-wheel/" >&2
-          exit 1
-        fi
-        ls -l "$WHEEL"
-        if ! python3 -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).testzip()" \
-            "$WHEEL"; then
-          echo "::error::Prebuilt wheel is not a readable zip (truncated download);" \
-            "artifact '${{ inputs.artifact_name }}' did not transfer completely." >&2
-          exit 1
-        fi
+        set -uo pipefail
+        DEST="$GITHUB_WORKSPACE/prebuilt-wheel"
+
+        good() {
+          local w
+          w="$(ls -1 "$DEST"/*.whl 2>/dev/null | head -1)"
+          [[ -n "$w" ]] || return 1
+          python3 -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).testzip()" "$w"
+        }
+
+        for attempt in 1 2 3; do
+          if good; then
+            ls -l "$(ls -1 "$DEST"/*.whl | head -1)"
+            exit 0
+          fi
+          echo "::warning::Prebuilt wheel is missing or not a readable zip" \
+            "(truncated download), attempt ${attempt}/3; re-fetching" \
+            "'${ARTIFACT_NAME}' from run ${ARTIFACT_RUN_ID}."
+          sleep $((attempt * 5))
+          rm -rf "$DEST"; mkdir -p "$DEST"
+          # Re-fetch by artifact id: `gh run download` writes the same layout
+          # download-artifact does, and a fresh request gets a fresh blob stream.
+          gh run download "${ARTIFACT_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
+            --name "${ARTIFACT_NAME}" --dir "$DEST" || true
+        done
+
+        echo "::error::Prebuilt wheel '${ARTIFACT_NAME}' did not transfer" \
+          "completely after 3 attempts; the uploaded artifact may itself be bad." >&2
+        exit 1
 
     - name: Install prebuilt wheel
       shell: bash
