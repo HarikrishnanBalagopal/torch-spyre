@@ -49,23 +49,10 @@ runs:
         run-id: ${{ inputs.run_id }}
         github-token: ${{ inputs.github_token }}
 
-    # download-artifact can leave a TRUNCATED wheel behind and still report
-    # outcome=success: it computes the digest in the stream's `close` handler, so a
-    # stream that dies early skips both the digest and the "Total of N artifact(s)
-    # downloaded" line, and a mismatch is only a core.warning (never a failure).
-    # uv is then the first thing to touch the bytes and takes the blame with
-    # "invalid package format / unable to locate the end of central directory
-    # record".
-    #
-    # Test the zip and RE-FETCH it when it is bad, so a transient truncation
-    # self-heals instead of reddening the suite. Same pattern and reason as the
-    # ingest fetch added in #5370 (push-to-clickhouse.yaml): "retried whole, since
-    # a truncated zip only fails at unzip".
-    # The re-fetch below needs `gh`, which the ARC runner images do NOT ship
-    # (verified on icr.io/ai_sw_accel/2.0/next/spyre-backend:amd64-dev: `command -v
-    # gh` is empty, and a bare `gh ...` exits 127). Install it on demand, guarded
-    # by a presence check so a runner that already has it skips the download --
-    # same pattern as recover-threaded-run-id and the ClickHouse ingests.
+    # download-artifact can leave a TRUNCATED wheel and still report
+    # outcome=success, so uv is blamed instead (issue #5732). Test the zip and
+    # re-fetch, as #5370's ingest fetch does. `gh` is absent from the ARC runner
+    # images, so install it on demand (pattern: recover-threaded-run-id).
     - name: Check for the GitHub CLI
       id: gh
       shell: bash
@@ -85,24 +72,14 @@ runs:
         set -uo pipefail
         DEST="$GITHUB_WORKSPACE/prebuilt-wheel"
 
-        # testzip() reads every member's CRC, so it catches a tail-truncated zip as
-        # well as corrupted contents. It deliberately does NOT validate wheel
-        # metadata: the job here is to detect an incomplete transfer, not to
-        # re-implement the installer.
-        #
-        # testzip() RETURNS the first bad member's name and raises nothing, so it
-        # must be compared against None explicitly: `python3 -c "...testzip()"`
-        # alone exits 0 on a CRC-corrupt archive and would pass validation. Only a
-        # structurally unreadable zip (the truncation case) raises BadZipFile.
-        # Stderr is dropped so a bad zip reports as one warning rather than a
-        # python traceback that reads like a real crash.
+        # Detects an incomplete transfer, not wheel validity. testzip() RETURNS
+        # the bad member and raises nothing, so it must be compared against None:
+        # bare `testzip()` exits 0 on CRC corruption. Stderr dropped (noisy trace).
         good() {
           local w
           w="$(ls -1 "$DEST"/*.whl 2>/dev/null | head -1)"
           [[ -n "$w" ]] || return 1
-          # One line on purpose: an unindented heredoc would terminate this YAML
-          # block scalar. `or sys.exit(...)` fires only when testzip() returns a
-          # member name, since None is falsy and a non-empty name is truthy.
+          # One line: an unindented heredoc would end this YAML block scalar.
           python3 -c "import sys, zipfile; \
             zipfile.ZipFile(sys.argv[1]).testzip() is None \
             or sys.exit('corrupt zip member')" "$w" 2>/dev/null
@@ -111,8 +88,7 @@ runs:
         ATTEMPTS=3
         for attempt in $(seq 1 "$ATTEMPTS"); do
           if good; then
-            # Same selection as the install step below (ls -1 | head -1), so the
-            # wheel verified here is the wheel installed.
+            # Same `ls -1 | head -1` as the install step: same wheel.
             ls -l "$(ls -1 "$DEST"/*.whl | head -1)"
             exit 0
           fi
@@ -122,18 +98,14 @@ runs:
             "(truncated download), attempt ${attempt}/${ATTEMPTS}; re-fetching" \
             "'${ARTIFACT_NAME}' from run ${ARTIFACT_RUN_ID}."
           sleep $((attempt * 5))
-          # A failed mkdir must not masquerade as a bad artifact: without `set -e`
-          # the loop would otherwise run to exhaustion and blame the upload.
+          # No `set -e`: an unguarded mkdir failure would get blamed on the upload.
           rm -rf "$DEST"
           if ! mkdir -p "$DEST"; then
             echo "::error::Cannot create the wheel download directory ${DEST}." >&2
             exit 1
           fi
-          # Re-fetch: a fresh request gets a fresh blob stream. `?name=` filters
-          # server-side -- a run here uploads ~200 artifacts (one JUnit XML per
-          # suite) and the wheel does NOT land on the first page, so listing with
-          # per_page=100 and filtering client-side silently finds nothing.
-          # A failed fetch is not fatal: the next iteration's verification decides.
+          # `?name=` filters server-side: a run uploads ~200 artifacts and the
+          # wheel is not on page 1. A failed fetch is not fatal; `good` re-checks.
           aid="$(gh api \
                    "/repos/${GITHUB_REPOSITORY}/actions/runs/${ARTIFACT_RUN_ID}/artifacts?name=${ARTIFACT_NAME}" \
                    --jq '[.artifacts[] | select(.expired == false)] | last | .id // empty')" || aid=""
