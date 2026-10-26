@@ -49,6 +49,30 @@ runs:
         run-id: ${{ inputs.run_id }}
         github-token: ${{ inputs.github_token }}
 
+    # download-artifact can leave a TRUNCATED wheel behind and still report
+    # outcome=success: it computes the digest in the stream's `close` handler, so a
+    # stream that dies early skips both the digest and the "Total of N artifact(s)
+    # downloaded" line, and a mismatch is only a core.warning (never a failure).
+    # uv is then the first thing to touch the bytes and takes the blame with
+    # "invalid package format / unable to locate the end of central directory
+    # record". Test the zip here so a bad download fails as a bad download.
+    # Same pattern (and reason) as push-to-clickhouse.yaml's artifact fetch.
+    - name: Verify the wheel is a complete zip
+      shell: bash
+      run: |
+        WHEEL="$(ls -1 "$GITHUB_WORKSPACE"/prebuilt-wheel/*.whl 2>/dev/null | head -1)"
+        if [[ -z "$WHEEL" ]]; then
+          echo "::error::No prebuilt wheel found under prebuilt-wheel/" >&2
+          exit 1
+        fi
+        ls -l "$WHEEL"
+        if ! python3 -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).testzip()" \
+            "$WHEEL"; then
+          echo "::error::Prebuilt wheel is not a readable zip (truncated download);" \
+            "artifact '${{ inputs.artifact_name }}' did not transfer completely." >&2
+          exit 1
+        fi
+
     - name: Install prebuilt wheel
       shell: bash
       env:
