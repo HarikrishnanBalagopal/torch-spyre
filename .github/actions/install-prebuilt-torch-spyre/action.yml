@@ -61,6 +61,20 @@ runs:
     # self-heals instead of reddening the suite. Same pattern and reason as the
     # ingest fetch added in #5370 (push-to-clickhouse.yaml): "retried whole, since
     # a truncated zip only fails at unzip".
+    # The re-fetch below needs `gh`, which the ARC runner images do NOT ship
+    # (verified on icr.io/ai_sw_accel/2.0/next/spyre-backend:amd64-dev: `command -v
+    # gh` is empty, and a bare `gh ...` exits 127). Install it on demand, guarded
+    # by a presence check so a runner that already has it skips the download --
+    # same pattern as recover-threaded-run-id and the ClickHouse ingests.
+    - name: Check for the GitHub CLI
+      id: gh
+      shell: bash
+      run: echo "present=$(command -v gh >/dev/null && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+    - name: Setup the GitHub CLI
+      if: steps.gh.outputs.present != 'true'
+      uses: ./.github/actions/setup-gh-cli
+
     - name: Verify the wheel, re-fetching a truncated download
       shell: bash
       env:
@@ -115,11 +129,23 @@ runs:
             echo "::error::Cannot create the wheel download directory ${DEST}." >&2
             exit 1
           fi
-          # Re-fetch: `gh run download` writes the same layout download-artifact
-          # does, and a fresh request gets a fresh blob stream. A failed fetch is
-          # not fatal here; the next attempt's verification decides.
-          gh run download "${ARTIFACT_RUN_ID}" --repo "${GITHUB_REPOSITORY}" \
-            --name "${ARTIFACT_NAME}" --dir "$DEST" || true
+          # Re-fetch: a fresh request gets a fresh blob stream. `?name=` filters
+          # server-side -- a run here uploads ~200 artifacts (one JUnit XML per
+          # suite) and the wheel does NOT land on the first page, so listing with
+          # per_page=100 and filtering client-side silently finds nothing.
+          # A failed fetch is not fatal: the next iteration's verification decides.
+          aid="$(gh api \
+                   "/repos/${GITHUB_REPOSITORY}/actions/runs/${ARTIFACT_RUN_ID}/artifacts?name=${ARTIFACT_NAME}" \
+                   --jq '[.artifacts[] | select(.expired == false)] | last | .id // empty')" || aid=""
+          if [[ -n "$aid" ]]; then
+            gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${aid}/zip" \
+                > "${DEST}/artifact.zip" \
+              && unzip -o -q "${DEST}/artifact.zip" -d "$DEST" || true
+            rm -f "${DEST}/artifact.zip"
+          else
+            echo "::warning::Could not resolve artifact id for '${ARTIFACT_NAME}'" \
+              "in run ${ARTIFACT_RUN_ID}."
+          fi
         done
 
         echo "::error::Prebuilt wheel '${ARTIFACT_NAME}' did not transfer" \
