@@ -1122,13 +1122,7 @@ class TestSpyre(TestCase):
                 self.assertEqual(int(t.cpu()[0]), v)
 
     def test_uint8_non_contiguous_roundtrip(self):
-        """The 272-vs-68 case from Spyre/product-test 875.
-
-        A 17x16 uint8 tensor was the largest observed fault, reported as
-        volume 272 against a capacity of 68, which is 272/4.  Transposed and
-        strided views are included because the originating test
-        (test__int_mm_cpu_m_17_k_16_n_16_...) used non-contiguous inputs.
-        """
+        """17x16 uint8 round trip in contiguous, transposed and strided views."""
         cpu = torch.arange(272, dtype=torch.uint8).reshape(17, 16)
         for name, t in (
             ("contiguous", cpu),
