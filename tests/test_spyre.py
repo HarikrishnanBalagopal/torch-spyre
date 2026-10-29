@@ -86,11 +86,6 @@ _SCALAR_ADD_SKIP_INT = pytest.mark.skip(
     reason="Spyre backend does not support int32/int16 dtype - causes segfault/crash in data format converter"
 )
 
-# TODO:ISSUE: https://github.com/torch-spyre/torch-spyre/issues/1588
-_SCALAR_ADD_SKIP_UINT8 = pytest.mark.skip(
-    reason="uint8 host transfers unsupported: host format SENUINT32 is 4 bytes, PyTorch stores 1 (#1588)"
-)
-
 _SCALAR_ADD_FALLBACK_FULL_WARN = r"torch\.ops\.spyre\.full is falling back to cpu"
 
 
@@ -639,7 +634,6 @@ class TestSpyre(TestCase):
             subtest(
                 (torch.uint8, lambda: torch.tensor(10, dtype=torch.uint8), None),
                 name="uint8",
-                decorators=[_SCALAR_ADD_SKIP_UINT8],
             ),
             subtest(
                 (torch.int16, lambda: torch.tensor(10, dtype=torch.int16), None),
@@ -1137,10 +1131,10 @@ class TestSpyre(TestCase):
     def test_uint8_allocation_still_allowed(self):
         """Allocating a uint8 tensor on device must keep working.
 
-        Only the host transfer is refused.  torch.distributed allocates uint8
-        tensors internally (distributed_c10d.py, used by barrier() and the
-        object collectives), so gating is_supported_dtype() on this would
-        break the multi-Spyre barrier tests.
+        torch.distributed allocates uint8 tensors internally
+        (distributed_c10d.py, used by barrier() and the object collectives),
+        so gating is_supported_dtype() on this would break the multi-Spyre
+        barrier tests.
         """
         t = torch.empty(272, dtype=torch.uint8, device="spyre")
         self.assertEqual(t.device.type, "spyre")
