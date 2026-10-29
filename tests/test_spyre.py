@@ -54,6 +54,15 @@ _SCALAR_ADD_XFAIL_TO_DTYPE = pytest.mark.xfail(
     "and the test asserts no warning (#5364)",
 )
 
+# Same #5364 CPU-fallback warn as int8, now that uint8 host transfers work:
+# "conversion from torch.uint8 to torch.float32 is falling back to cpu".
+_SCALAR_ADD_XFAIL_UINT8_TO_DTYPE = pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason="the uint8 to float32 conversion falls back to the CPU and warns, "
+    "and the test asserts no warning (#5364)",
+)
+
 
 # A float16-format bool's float32 or integer result is staggered on device.
 _EAGER_BOOL_READBACK_XFAIL = pytest.mark.xfail(
@@ -634,6 +643,7 @@ class TestSpyre(TestCase):
             subtest(
                 (torch.uint8, lambda: torch.tensor(10, dtype=torch.uint8), None),
                 name="uint8",
+                decorators=[_SCALAR_ADD_XFAIL_UINT8_TO_DTYPE],
             ),
             subtest(
                 (torch.int16, lambda: torch.tensor(10, dtype=torch.int16), None),
