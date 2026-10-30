@@ -1123,11 +1123,13 @@ class TestSpyre(TestCase):
 
     def test_uint8_non_contiguous_roundtrip(self):
         """17x16 uint8 round trip in contiguous, transposed and strided views."""
-        cpu = torch.arange(272, dtype=torch.uint8).reshape(17, 16)
+        # % 251 (prime) instead of a plain arange: plain arange wraps at 256,
+        # so row 16 would equal row 0 and a row-swap bug would pass.
+        cpu = (torch.arange(272) % 251).to(torch.uint8).reshape(17, 16)
         for name, t in (
             ("contiguous", cpu),
             ("transposed", cpu.t()),
-            ("strided", torch.arange(544, dtype=torch.uint8)[::2].reshape(17, 16)),
+            ("strided", (torch.arange(544) % 251).to(torch.uint8)[::2].reshape(17, 16)),
         ):
             with self.subTest(view=name):
                 self.assertEqual(t.to("spyre").cpu(), t)
